@@ -90,24 +90,33 @@ export function AdminImportCSVModal({ onRefresh }: { onRefresh: () => void }) {
 
     const handleImport = async () => {
         if (!file) return toast.error("Please select a CSV file first.");
-        setLoading(true)
+        
+        if (!file.name.toLowerCase().endsWith('.csv')) {
+            toast.error("Please upload a .csv file. Excel files (.xlsx) must be saved as CSV first.")
+            return
+        }
 
-        const reader = new FileReader()
-        reader.onload = async (e) => {
-            const text = e.target?.result
-            if (typeof text === "string") {
-                const res = await bulkImportFarmers(text)
-                if (res.error) {
-                    toast.error(res.error)
-                } else {
-                    toast.success(`Successfully imported ${res.count} farmers!`)
-                    setOpen(false)
-                    onRefresh()
-                }
+        setLoading(true)
+        try {
+            const text = await file.text()
+            if (!text || text.length < 10) {
+                throw new Error("The file appears to be empty or corrupted.")
             }
+            
+            const res = await bulkImportFarmers(text)
+            if (res.error) {
+                toast.error(res.error)
+            } else {
+                toast.success(`Successfully imported ${res.count} farmers!`)
+                setOpen(false)
+                onRefresh()
+                setFile(null)
+            }
+        } catch (e: any) {
+            toast.error(e.message || "An error occurred during import")
+        } finally {
             setLoading(false)
         }
-        reader.readAsText(file)
     }
 
     return (

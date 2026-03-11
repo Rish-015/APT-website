@@ -123,40 +123,51 @@ export async function handleInitialPasswordReset(password: string) {
 }
 
 export async function bulkImportFarmers(csvText: string) {
-    const session = await getServerSession(authOptions);
-    if ((session?.user as any)?.role !== "ADMIN") throw new Error("Unauthorized");
-
     try {
+        const session = await getServerSession(authOptions);
+        if ((session?.user as any)?.role !== "ADMIN") return { error: "Unauthorized: Admin access required" };
+
+        if (!csvText || csvText.length < 10) return { error: "Invalid or empty file content" };
+
         const rows = csvText.split('\n').map(row => row.split(','));
-        const headers = rows.shift(); // name,phone,email,state,crops
+        const headers = rows.shift();
+        
+        // Basic validation: Check if first column looks like a name or 'name' header
+        if (!headers || !headers[0]?.toLowerCase().includes('name')) {
+            return { error: "Invalid CSV format. First column must be 'name'." };
+        }
 
         let imported = 0;
         const hashedPassword = await bcrypt.hash("Welcome@123", 12);
 
         for (const row of rows) {
-            if (row.length >= 2) { // Minimal validation matching standard CSV structure
+            if (row.length >= 2) { 
                 const [name, phone, email, state, crops] = row.map(cell => cell?.trim());
                 if (!name || (!phone && !email)) continue;
 
-                await prisma.user.create({
-                    data: {
-                        name,
-                        phone: phone || null,
-                        email: email || null,
-                        image: state || null,
-                        cropDetails: crops || null,
-                        password: hashedPassword,
-                        role: "USER",
-                        // mustChangePassword: true
-                    }
-                }).catch(() => null); // Ignore unique constraints individually
-                imported++;
+                try {
+                    await prisma.user.create({
+                        data: {
+                            name,
+                            phone: phone || null,
+                            email: email || null,
+                            image: state || null,
+                            cropDetails: crops || null,
+                            password: hashedPassword,
+                            role: "USER"
+                        }
+                    });
+                    imported++;
+                } catch (e) {
+                    // Unique constraint probably
+                }
             }
         }
         revalidatePath("/admin");
         return { success: true, count: imported };
     } catch (error: any) {
-        return { error: error.message };
+        console.error("Farmers Import Critical Error:", error);
+        return { error: "A critical error occurred during import. Please ensure you are using a valid CSV file." };
     }
 }
 
@@ -265,12 +276,13 @@ export async function createScheme(data: {
 }
 
 export async function bulkImportSchemes(csvText: string) {
-    const session = await getServerSession(authOptions);
-    if ((session?.user as any)?.role !== "ADMIN") throw new Error("Unauthorized");
-
     try {
+        const session = await getServerSession(authOptions);
+        if ((session?.user as any)?.role !== "ADMIN") return { error: "Unauthorized: Admin access required" };
+
+        if (!csvText || csvText.length < 10) return { error: "Invalid or empty file content" };
+
         const rows = csvText.split('\n').map(row => {
-            // Improved CSV parser to handle quotes correctly
             const result = [];
             let current = '';
             let inQuotes = false;
@@ -289,35 +301,44 @@ export async function bulkImportSchemes(csvText: string) {
             return result;
         });
         
-        const headers = rows.shift(); // scheme,slug,details,benefits,eligibility,application_process,documents_required,level,scheme_category,tags
+        const headers = rows.shift();
+        // Basic validation: Check if 'scheme' or 'title' is in headers
+        if (!headers || (!headers[0]?.toLowerCase().includes('scheme') && !headers[0]?.toLowerCase().includes('title'))) {
+            return { error: "Invalid CSV format. Please use the provided template." };
+        }
 
         let imported = 0;
         for (const row of rows) {
-            if (row.length >= 1 && row[0]) {
+            if (row.length >= 3 && row[0]) { // Require at least scheme name and details
                 const [scheme, slug, details, benefits, eligibility, application_process, documents_required, level, scheme_category, tags] = row;
                 
-                await prisma.scheme.create({
-                    data: {
-                        title: scheme,
-                        slug: slug || null,
-                        description: details || "",
-                        benefits: benefits || "",
-                        eligibility: eligibility || "",
-                        applicationProcess: application_process || "",
-                        documentsRequired: documents_required || "",
-                        level: level || "Central",
-                        category: scheme_category || "Agriculture",
-                        tags: tags || ""
-                    }
-                }).catch(e => console.error("Import error for row", scheme, e));
-                imported++;
+                try {
+                    await prisma.scheme.create({
+                        data: {
+                            title: scheme,
+                            slug: slug || null,
+                            description: details || "",
+                            benefits: benefits || "",
+                            eligibility: eligibility || "",
+                            applicationProcess: application_process || "",
+                            documentsRequired: documents_required || "",
+                            level: level || "Central",
+                            category: scheme_category || "Agriculture",
+                            tags: tags || ""
+                        }
+                    });
+                    imported++;
+                } catch (e) {
+                    console.error("Row import failed:", scheme, e);
+                }
             }
         }
         revalidatePath("/admin");
         revalidatePath("/schemes");
         return { success: true, count: imported };
     } catch (error: any) {
-        return { error: error.message };
+        console.error("Bulk Import Critical Error:", error);
+        return { error: "A critical error occurred during import. Please ensure you are using a valid CSV file." };
     }
 }
 

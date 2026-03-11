@@ -17,7 +17,14 @@ export function AdminImportSchemesCSVModal({ onRefresh }: { onRefresh: () => voi
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
-            setFile(e.target.files[0])
+            const selectedFile = e.target.files[0]
+            if (!selectedFile.name.toLowerCase().endsWith('.csv')) {
+                toast.error("Please upload a .csv file. Excel files (.xlsx) are not supported directly.")
+                e.target.value = "" // Reset
+                setFile(null)
+                return
+            }
+            setFile(selectedFile)
         }
     }
 
@@ -26,14 +33,18 @@ export function AdminImportSchemesCSVModal({ onRefresh }: { onRefresh: () => voi
         setLoading(true)
         try {
             const text = await file.text()
+            if (!text || text.length < 10) {
+                throw new Error("The file appears to be empty or corrupted.")
+            }
             const res = await bulkImportSchemes(text)
             if (res.error) throw new Error(res.error)
             
             toast.success(`Successfully imported ${res.count} schemes!`)
             setOpen(false)
             onRefresh()
+            setFile(null)
         } catch (e: any) {
-            toast.error(e.message)
+            toast.error(e.message || "Failed to import schemes")
         } finally {
             setLoading(false)
         }
@@ -61,7 +72,8 @@ export function AdminImportSchemesCSVModal({ onRefresh }: { onRefresh: () => voi
                 <DialogHeader>
                     <DialogTitle>Bulk Import Schemes</DialogTitle>
                     <DialogDescription>
-                        Upload a CSV file containing schemes data. Ensure headers match the template.
+                        Upload a CSV file containing schemes data. <br/>
+                        <span className="text-amber-600 font-semibold">Note: Excel files (.xlsx) must be saved as "CSV (Comma Delimited)" before upload.</span>
                     </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-6 py-4">
