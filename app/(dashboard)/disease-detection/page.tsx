@@ -45,7 +45,8 @@ export default function DiseaseDetectionPage() {
     formData.append("image", file)
 
     try {
-      const response = await fetch("http://localhost:5000/api/predict-disease", {
+      const mlApiUrl = process.env.NEXT_PUBLIC_ML_API_URL || "http://localhost:5000"
+      const response = await fetch(`${mlApiUrl}/api/predict-disease`, {
         method: "POST",
         body: formData,
       })
