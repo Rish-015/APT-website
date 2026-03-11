@@ -105,7 +105,7 @@ export function AdminImportCSVModal({ onRefresh }: { onRefresh: () => void }) {
             const reader = new FileReader();
             reader.onload = async (e) => {
                 const data = e.target?.result;
-                const workbook = XLSX.read(data, { type: 'binary' });
+                const workbook = XLSX.read(data, { type: 'array' });
                 const sheetName = workbook.SheetNames[0];
                 const sheet = workbook.Sheets[sheetName];
                 const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
@@ -131,7 +131,7 @@ export function AdminImportCSVModal({ onRefresh }: { onRefresh: () => void }) {
                 toast.error("Failed to read file");
                 setLoading(false);
             };
-            reader.readAsBinaryString(file);
+            reader.readAsArrayBuffer(file);
         } catch (e: any) {
             toast.error(e.message || "An error occurred during import")
             setLoading(false)

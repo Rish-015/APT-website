@@ -4,6 +4,7 @@ import { prisma } from "@/lib/auth";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 // ============================================
@@ -127,47 +128,48 @@ export async function bulkImportFarmers(data: any[][]) {
         const session = await getServerSession(authOptions);
         if ((session?.user as any)?.role !== "ADMIN") return { error: "Unauthorized: Admin access required" };
 
-        if (!data || data.length < 2) return { error: "Invalid or empty dataset" };
+        if (!data || data.length < 2) return { error: "No data found in file." };
 
         const rows = [...data];
         const headers = rows.shift();
         
-        // Basic validation: Check if first column looks like a name or 'name' header
         if (!headers || !headers[0]?.toString().toLowerCase().includes('name')) {
-            return { error: "Invalid file format. First column must be 'name'." };
+            return { error: "Invalid file format. Header 'name' not found in first column." };
         }
 
-        let imported = 0;
         const hashedPassword = await bcrypt.hash("Welcome@123", 12);
+        const usersToCreate = [];
 
         for (const row of rows) {
             if (row.length >= 2) { 
                 const [name, phone, email, state, crops] = row.map(cell => cell?.toString().trim());
                 if (!name || (!phone && !email)) continue;
-
-                try {
-                    await prisma.user.create({
-                        data: {
-                            name,
-                            phone: phone || null,
-                            email: email || null,
-                            image: state || null,
-                            cropDetails: crops || null,
-                            password: hashedPassword,
-                            role: "USER"
-                        }
-                    });
-                    imported++;
-                } catch (e) {
-                    // Unique constraint probably
-                }
+                
+                usersToCreate.push({
+                    name,
+                    phone: phone || null,
+                    email: email || null,
+                    image: state || null,
+                    cropDetails: crops || null,
+                    password: hashedPassword,
+                    role: "USER" as Role
+                });
             }
         }
+
+        if (usersToCreate.length === 0) return { error: "No valid farmer records found in the file." };
+
+        // PostgreSql/Prisma createMany is very fast
+        const result = await prisma.user.createMany({
+            data: usersToCreate,
+            skipDuplicates: true
+        });
+
         revalidatePath("/admin");
-        return { success: true, count: imported };
+        return { success: true, count: result.count };
     } catch (error: any) {
         console.error("Farmers Import Critical Error:", error);
-        return { error: "A critical error occurred during import." };
+        return { error: "A critical error occurred. Please check your file format." };
     }
 }
 
@@ -264,6 +266,9 @@ export async function createScheme(data: {
                 level: data.level,
                 category: data.category,
                 tags: data.tags,
+                state: "All India",
+                link: "",
+                department: "",
                 deadline: data.deadline ? new Date(data.deadline) : null,
             }
         });
@@ -280,48 +285,51 @@ export async function bulkImportSchemes(data: any[][]) {
         const session = await getServerSession(authOptions);
         if ((session?.user as any)?.role !== "ADMIN") return { error: "Unauthorized: Admin access required" };
 
-        if (!data || data.length < 2) return { error: "Invalid or empty dataset" };
+        if (!data || data.length < 2) return { error: "No data found in file." };
 
         const rows = [...data];
         const headers = rows.shift();
         
-        // Basic validation: Check if 'scheme' or 'title' is in headers
         if (!headers || (!headers[0]?.toString().toLowerCase().includes('scheme') && !headers[0]?.toString().toLowerCase().includes('title'))) {
-            return { error: "Invalid file format. Please use the provided template." };
+            return { error: "Invalid file format. Header 'scheme' or 'title' not found." };
         }
 
-        let imported = 0;
+        const schemesToCreate = [];
         for (const row of rows) {
-            if (row.length >= 3 && row[0]) { // Require at least scheme name and details
+            if (row.length >= 3 && row[0]) {
                 const [scheme, slug, details, benefits, eligibility, application_process, documents_required, level, scheme_category, tags] = row.map(c => c?.toString().trim());
                 
-                try {
-                    await prisma.scheme.create({
-                        data: {
-                            title: scheme || "",
-                            slug: slug || null,
-                            description: details || "",
-                            benefits: benefits || "",
-                            eligibility: eligibility || "",
-                            applicationProcess: application_process || "",
-                            documentsRequired: documents_required || "",
-                            level: level || "Central",
-                            category: scheme_category || "Agriculture",
-                            tags: tags || ""
-                        }
-                    });
-                    imported++;
-                } catch (e) {
-                    console.error("Row import failed:", scheme, e);
-                }
+                schemesToCreate.push({
+                    title: scheme || "",
+                    slug: slug || null,
+                    description: details || "",
+                    benefits: benefits || "",
+                    eligibility: eligibility || "",
+                    applicationProcess: application_process || "",
+                    documentsRequired: documents_required || "",
+                    level: level || "Central",
+                    category: scheme_category || "Agriculture",
+                    tags: tags || "",
+                    state: "All India",
+                    link: "",
+                    department: ""
+                });
             }
         }
+
+        if (schemesToCreate.length === 0) return { error: "No valid scheme records found." };
+
+        const result = await prisma.scheme.createMany({
+            data: schemesToCreate,
+            skipDuplicates: true
+        });
+
         revalidatePath("/admin");
         revalidatePath("/schemes");
-        return { success: true, count: imported };
+        return { success: true, count: result.count };
     } catch (error: any) {
         console.error("Bulk Import Critical Error:", error);
-        return { error: "A critical error occurred during import." };
+        return { error: "A critical error occurred. Please check your file format." };
     }
 }
 
