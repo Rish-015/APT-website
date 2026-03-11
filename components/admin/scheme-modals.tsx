@@ -87,15 +87,14 @@ export function AdminImportSchemesCSVModal({ onRefresh }: { onRefresh: () => voi
             <DialogTrigger asChild>
                 <Button variant="outline" className="gap-2 border-emerald-600 text-emerald-700 hover:bg-emerald-50">
                     <Upload className="h-4 w-4" />
-                    Import CSV
+                    Import CSV / Excel
                 </Button>
             </DialogTrigger>
             <DialogContent>
                 <DialogHeader>
                     <DialogTitle>Bulk Import Schemes</DialogTitle>
                     <DialogDescription>
-                        Upload a CSV file containing schemes data. <br/>
-                        <span className="text-amber-600 font-semibold">Note: Excel files (.xlsx) must be saved as "CSV (Comma Delimited)" before upload.</span>
+                        Upload a CSV or Excel (.xlsx, .xls) file containing schemes data.
                     </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-6 py-4">
