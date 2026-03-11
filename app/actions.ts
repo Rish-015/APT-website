@@ -122,19 +122,19 @@ export async function handleInitialPasswordReset(password: string) {
     }
 }
 
-export async function bulkImportFarmers(csvText: string) {
+export async function bulkImportFarmers(data: any[][]) {
     try {
         const session = await getServerSession(authOptions);
         if ((session?.user as any)?.role !== "ADMIN") return { error: "Unauthorized: Admin access required" };
 
-        if (!csvText || csvText.length < 10) return { error: "Invalid or empty file content" };
+        if (!data || data.length < 2) return { error: "Invalid or empty dataset" };
 
-        const rows = csvText.split('\n').map(row => row.split(','));
+        const rows = [...data];
         const headers = rows.shift();
         
         // Basic validation: Check if first column looks like a name or 'name' header
-        if (!headers || !headers[0]?.toLowerCase().includes('name')) {
-            return { error: "Invalid CSV format. First column must be 'name'." };
+        if (!headers || !headers[0]?.toString().toLowerCase().includes('name')) {
+            return { error: "Invalid file format. First column must be 'name'." };
         }
 
         let imported = 0;
@@ -142,7 +142,7 @@ export async function bulkImportFarmers(csvText: string) {
 
         for (const row of rows) {
             if (row.length >= 2) { 
-                const [name, phone, email, state, crops] = row.map(cell => cell?.trim());
+                const [name, phone, email, state, crops] = row.map(cell => cell?.toString().trim());
                 if (!name || (!phone && !email)) continue;
 
                 try {
@@ -167,7 +167,7 @@ export async function bulkImportFarmers(csvText: string) {
         return { success: true, count: imported };
     } catch (error: any) {
         console.error("Farmers Import Critical Error:", error);
-        return { error: "A critical error occurred during import. Please ensure you are using a valid CSV file." };
+        return { error: "A critical error occurred during import." };
     }
 }
 
@@ -275,47 +275,30 @@ export async function createScheme(data: {
     }
 }
 
-export async function bulkImportSchemes(csvText: string) {
+export async function bulkImportSchemes(data: any[][]) {
     try {
         const session = await getServerSession(authOptions);
         if ((session?.user as any)?.role !== "ADMIN") return { error: "Unauthorized: Admin access required" };
 
-        if (!csvText || csvText.length < 10) return { error: "Invalid or empty file content" };
+        if (!data || data.length < 2) return { error: "Invalid or empty dataset" };
 
-        const rows = csvText.split('\n').map(row => {
-            const result = [];
-            let current = '';
-            let inQuotes = false;
-            for (let i = 0; i < row.length; i++) {
-                const char = row[i];
-                if (char === '"') {
-                    inQuotes = !inQuotes;
-                } else if (char === ',' && !inQuotes) {
-                    result.push(current.trim());
-                    current = '';
-                } else {
-                    current += char;
-                }
-            }
-            result.push(current.trim());
-            return result;
-        });
-        
+        const rows = [...data];
         const headers = rows.shift();
+        
         // Basic validation: Check if 'scheme' or 'title' is in headers
-        if (!headers || (!headers[0]?.toLowerCase().includes('scheme') && !headers[0]?.toLowerCase().includes('title'))) {
-            return { error: "Invalid CSV format. Please use the provided template." };
+        if (!headers || (!headers[0]?.toString().toLowerCase().includes('scheme') && !headers[0]?.toString().toLowerCase().includes('title'))) {
+            return { error: "Invalid file format. Please use the provided template." };
         }
 
         let imported = 0;
         for (const row of rows) {
             if (row.length >= 3 && row[0]) { // Require at least scheme name and details
-                const [scheme, slug, details, benefits, eligibility, application_process, documents_required, level, scheme_category, tags] = row;
+                const [scheme, slug, details, benefits, eligibility, application_process, documents_required, level, scheme_category, tags] = row.map(c => c?.toString().trim());
                 
                 try {
                     await prisma.scheme.create({
                         data: {
-                            title: scheme,
+                            title: scheme || "",
                             slug: slug || null,
                             description: details || "",
                             benefits: benefits || "",
@@ -338,7 +321,7 @@ export async function bulkImportSchemes(csvText: string) {
         return { success: true, count: imported };
     } catch (error: any) {
         console.error("Bulk Import Critical Error:", error);
-        return { error: "A critical error occurred during import. Please ensure you are using a valid CSV file." };
+        return { error: "A critical error occurred during import." };
     }
 }
 

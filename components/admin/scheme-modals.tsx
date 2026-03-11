@@ -9,6 +9,7 @@ import { Plus } from "lucide-react"
 import { toast } from "sonner"
 import { createScheme, bulkImportSchemes } from "@/app/actions"
 import { Download, Upload } from "lucide-react"
+import * as XLSX from "xlsx"
 
 export function AdminImportSchemesCSVModal({ onRefresh }: { onRefresh: () => void }) {
     const [open, setOpen] = useState(false)
@@ -18,8 +19,11 @@ export function AdminImportSchemesCSVModal({ onRefresh }: { onRefresh: () => voi
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             const selectedFile = e.target.files[0]
-            if (!selectedFile.name.toLowerCase().endsWith('.csv')) {
-                toast.error("Please upload a .csv file. Excel files (.xlsx) are not supported directly.")
+            const validExtensions = ['.csv', '.xlsx', '.xls'];
+            const fileExt = selectedFile.name.toLowerCase().substring(selectedFile.name.lastIndexOf('.'));
+            
+            if (!validExtensions.includes(fileExt)) {
+                toast.error("Please upload a .csv or .xlsx file.")
                 e.target.value = "" // Reset
                 setFile(null)
                 return
@@ -32,20 +36,38 @@ export function AdminImportSchemesCSVModal({ onRefresh }: { onRefresh: () => voi
         if (!file) return
         setLoading(true)
         try {
-            const text = await file.text()
-            if (!text || text.length < 10) {
-                throw new Error("The file appears to be empty or corrupted.")
-            }
-            const res = await bulkImportSchemes(text)
-            if (res.error) throw new Error(res.error)
-            
-            toast.success(`Successfully imported ${res.count} schemes!`)
-            setOpen(false)
-            onRefresh()
-            setFile(null)
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const data = e.target?.result;
+                const workbook = XLSX.read(data, { type: 'binary' });
+                const sheetName = workbook.SheetNames[0];
+                const sheet = workbook.Sheets[sheetName];
+                const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+
+                if (!jsonData || jsonData.length < 2) {
+                    toast.error("The file appears to be empty or invalid.")
+                    setLoading(false)
+                    return;
+                }
+
+                const res = await bulkImportSchemes(jsonData)
+                if (res.error) {
+                    toast.error(res.error)
+                } else {
+                    toast.success(`Successfully imported ${res.count} schemes!`)
+                    setOpen(false)
+                    onRefresh()
+                    setFile(null)
+                }
+                setLoading(false)
+            };
+            reader.onerror = () => {
+                toast.error("Failed to read file");
+                setLoading(false);
+            };
+            reader.readAsBinaryString(file);
         } catch (e: any) {
             toast.error(e.message || "Failed to import schemes")
-        } finally {
             setLoading(false)
         }
     }

@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { UserPlus, Upload, Eye, Edit, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { createFarmerAdmin, updateFarmerAdmin, bulkImportFarmers, deleteFarmer } from "@/app/actions"
+import * as XLSX from "xlsx"
 
 export function AdminAddFarmerModal({ onRefresh }: { onRefresh: () => void }) {
     const [open, setOpen] = useState(false)
@@ -89,32 +90,50 @@ export function AdminImportCSVModal({ onRefresh }: { onRefresh: () => void }) {
     const [file, setFile] = useState<File | null>(null)
 
     const handleImport = async () => {
-        if (!file) return toast.error("Please select a CSV file first.");
+        if (!file) return toast.error("Please select a file first.");
         
-        if (!file.name.toLowerCase().endsWith('.csv')) {
-            toast.error("Please upload a .csv file. Excel files (.xlsx) must be saved as CSV first.")
+        const validExtensions = ['.csv', '.xlsx', '.xls'];
+        const fileExt = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+        
+        if (!validExtensions.includes(fileExt)) {
+            toast.error("Please upload a .csv or .xlsx file.")
             return
         }
 
         setLoading(true)
         try {
-            const text = await file.text()
-            if (!text || text.length < 10) {
-                throw new Error("The file appears to be empty or corrupted.")
-            }
-            
-            const res = await bulkImportFarmers(text)
-            if (res.error) {
-                toast.error(res.error)
-            } else {
-                toast.success(`Successfully imported ${res.count} farmers!`)
-                setOpen(false)
-                onRefresh()
-                setFile(null)
-            }
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const data = e.target?.result;
+                const workbook = XLSX.read(data, { type: 'binary' });
+                const sheetName = workbook.SheetNames[0];
+                const sheet = workbook.Sheets[sheetName];
+                const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+
+                if (!jsonData || jsonData.length < 2) {
+                    toast.error("The file appears to be empty or invalid.")
+                    setLoading(false)
+                    return;
+                }
+
+                const res = await bulkImportFarmers(jsonData)
+                if (res.error) {
+                    toast.error(res.error)
+                } else {
+                    toast.success(`Successfully imported ${res.count} farmers!`)
+                    setOpen(false)
+                    onRefresh()
+                    setFile(null)
+                }
+                setLoading(false)
+            };
+            reader.onerror = () => {
+                toast.error("Failed to read file");
+                setLoading(false);
+            };
+            reader.readAsBinaryString(file);
         } catch (e: any) {
             toast.error(e.message || "An error occurred during import")
-        } finally {
             setLoading(false)
         }
     }
@@ -124,25 +143,25 @@ export function AdminImportCSVModal({ onRefresh }: { onRefresh: () => void }) {
             <DialogTrigger asChild>
                 <Button variant="outline" className="gap-2 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800">
                     <Upload className="h-4 w-4" />
-                    Import CSV
+                    Import CSV / Excel
                 </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[425px]">
                 <DialogHeader>
                     <DialogTitle>Bulk Import Farmers</DialogTitle>
                     <DialogDescription>
-                        Upload a strict CSV file format containing: <br />
+                        Upload a CSV or Excel file containing: <br />
                         <code className="text-xs bg-slate-100 px-1 py-0.5 rounded">name, phone, email, state, crops</code>
                     </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                     <Input
                         type="file"
-                        accept=".csv"
+                        accept=".csv, .xlsx, .xls"
                         onChange={(e) => setFile(e.target.files?.[0] || null)}
                     />
-                    <Button onClick={handleImport} className="w-full" disabled={loading || !file}>
-                        {loading ? "Processing CSV..." : "Start Import"}
+                    <Button onClick={handleImport} className="w-full bg-emerald-700 hover:bg-emerald-800 text-white" disabled={loading || !file}>
+                        {loading ? "Processing Data..." : "Start Import"}
                     </Button>
                 </div>
             </DialogContent>
