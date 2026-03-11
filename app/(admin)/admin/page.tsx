@@ -375,8 +375,8 @@ export default function AdminPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="rounded-lg border border-border">
-                <Table>
+              <div className="rounded-lg border border-border overflow-hidden">
+                <Table className="w-full table-fixed border-collapse">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[25%]">Name</TableHead>
@@ -400,14 +400,14 @@ export default function AdminPage() {
                     ) : filteredFarmers.length > 0 ? (
                       filteredFarmers.map((farmer) => (
                         <TableRow key={farmer.id} className="group">
-                          <TableCell className="overflow-hidden">
+                          <TableCell className="overflow-hidden max-w-0">
                             <div className="max-w-full">
                               <p className="font-medium truncate" title={farmer.name}>{farmer.name}</p>
                               <p className="text-xs text-muted-foreground truncate" title={farmer.email}>{farmer.email}</p>
                             </div>
                           </TableCell>
-                          <TableCell className="truncate" title={farmer.location}>{farmer.location}</TableCell>
-                          <TableCell className="max-w-[200px] truncate" title={farmer.crops}>{farmer.crops}</TableCell>
+                          <TableCell className="truncate max-w-0" title={farmer.location}>{farmer.location}</TableCell>
+                          <TableCell className="truncate max-w-0" title={farmer.crops}>{farmer.crops}</TableCell>
                           <TableCell>
                             <Badge variant={farmer.status === 'active' ? 'default' : 'secondary'}>
                               {farmer.status}
@@ -465,8 +465,8 @@ export default function AdminPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="rounded-lg border border-border">
-                <Table>
+              <div className="rounded-lg border border-border overflow-hidden">
+                <Table className="w-full table-fixed border-collapse">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[35%]">Scheme Name</TableHead>
@@ -481,10 +481,10 @@ export default function AdminPage() {
                       <TableRow><TableCell colSpan={5} className="text-center py-6">Loading schemes...</TableCell></TableRow>
                     ) : schemes.map((scheme) => (
                       <TableRow key={scheme.id}>
-                        <TableCell className="font-medium truncate" title={scheme.title}>{scheme.title}</TableCell>
-                        <TableCell className="truncate" title={scheme.category}>{scheme.category}</TableCell>
-                        <TableCell className="truncate">{scheme.level}</TableCell>
-                        <TableCell className="truncate" title={scheme.benefits}>{scheme.benefits}</TableCell>
+                        <TableCell className="font-medium truncate max-w-0" title={scheme.title}>{scheme.title}</TableCell>
+                        <TableCell className="truncate max-w-0" title={scheme.category}>{scheme.category}</TableCell>
+                        <TableCell className="truncate max-w-0">{scheme.level}</TableCell>
+                        <TableCell className="truncate max-w-0" title={scheme.benefits}>{scheme.benefits}</TableCell>
                         <TableCell className="text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -526,8 +526,8 @@ export default function AdminPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="rounded-lg border border-border">
-                <Table>
+              <div className="rounded-lg border border-border overflow-hidden">
+                <Table className="w-full table-fixed border-collapse">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Crop</TableHead>
