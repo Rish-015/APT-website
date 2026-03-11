@@ -100,7 +100,7 @@ const featureUsageData = [
 import { getFarmers, getAdminStats, getSchemes, deleteScheme, deleteFarmer } from "../../actions"
 import { toast } from "sonner"
 import { AdminAddFarmerModal, AdminImportCSVModal, AdminEditFarmerModal, AdminViewFarmerModal } from "@/components/admin/farmer-modals"
-import { AdminAddSchemeModal } from "@/components/admin/scheme-modals"
+import { AdminAddSchemeModal, AdminImportSchemesCSVModal } from "@/components/admin/scheme-modals"
 
 export default function AdminPage() {
   const [farmerSearch, setFarmerSearch] = useState("")
@@ -458,7 +458,10 @@ export default function AdminPage() {
                   <CardTitle>Manage Schemes</CardTitle>
                   <CardDescription>Add and update government schemes</CardDescription>
                 </div>
-                <AdminAddSchemeModal onRefresh={loadData} />
+                <div className="flex gap-2">
+                  <AdminImportSchemesCSVModal onRefresh={loadData} />
+                  <AdminAddSchemeModal onRefresh={loadData} />
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -467,9 +470,9 @@ export default function AdminPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Scheme Name</TableHead>
-                      <TableHead>Beneficiaries</TableHead>
-                      <TableHead>Budget</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Level</TableHead>
+                      <TableHead>Benefit Summary</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -479,11 +482,9 @@ export default function AdminPage() {
                     ) : schemes.map((scheme) => (
                       <TableRow key={scheme.id}>
                         <TableCell className="font-medium">{scheme.title}</TableCell>
-                        <TableCell>{scheme.state}</TableCell>
-                        <TableCell>{scheme.department}</TableCell>
-                        <TableCell>
-                          <Badge className="bg-chart-1/20 text-chart-1">Active</Badge>
-                        </TableCell>
+                        <TableCell>{scheme.category}</TableCell>
+                        <TableCell>{scheme.level}</TableCell>
+                        <TableCell className="max-w-xs truncate">{scheme.benefits}</TableCell>
                         <TableCell className="text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>

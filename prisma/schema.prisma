@@ -98,14 +98,20 @@ model Comment {
 }
 
 model Scheme {
-  id           String   @id @default(cuid())
-  title        String
-  description  String   @db.Text
-  department   String
-  state        String   @default("All India")
-  eligibility  String?  @db.Text
-  link         String?
-  deadline     DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  title              String
+  slug               String?  @unique
+  description        String   @db.Text
+  benefits           String?  @db.Text
+  eligibility        String?  @db.Text
+  applicationProcess String?  @db.Text
+  documentsRequired  String?  @db.Text
+  level              String?  @default("Central") // State/Central
+  category           String?  // scheme_category
+  tags               String?  // comma separated tags
+  state              String   @default("All India")
+  link               String?
+  deadline           DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 }

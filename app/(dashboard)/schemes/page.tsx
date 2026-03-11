@@ -1,27 +1,23 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { FileText, Search, Calendar, IndianRupee, Users, ChevronRight, CheckCircle, ExternalLink } from "lucide-react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { FileText, Search, IndianRupee, MapPin, Layers, Info, CheckCircle2, ClipboardList, BookOpen, Users } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-
-const categories = ["All Categories", "Income Support", "Insurance", "Credit", "Technical", "Pension", "Marketing"]
-
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
 import { getSchemes } from "../../actions"
 
 export default function SchemesPage() {
   const [searchQuery, setSearchQuery] = useState("")
-  const [selectedCategory, setSelectedCategory] = useState("All Categories")
-  const [expandedScheme, setExpandedScheme] = useState<string | null>(null)
+  const [selectedScheme, setSelectedScheme] = useState<any>(null)
   const [schemes, setSchemes] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
@@ -39,180 +35,193 @@ export default function SchemesPage() {
     fetchSchemes();
   }, [])
 
-  const filteredSchemes = schemes.filter(scheme => {
-    const matchesSearch = scheme.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      scheme.description.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesCategory = selectedCategory === "All Categories" || scheme.state === selectedCategory
-    return matchesSearch && matchesCategory
-  })
+  const filteredSchemes = (schemes || []).filter(scheme => 
+    (scheme.title || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (scheme.category || "").toLowerCase().includes(searchQuery.toLowerCase())
+  )
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground lg:text-3xl">
-          Government Schemes
-        </h1>
-        <p className="text-muted-foreground">
-          Explore agricultural schemes and subsidies available for farmers
-        </p>
-      </div>
-
-      {/* Quick Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardContent className="flex items-center gap-4 pt-6">
-            <div className="rounded-full bg-chart-1/10 p-3">
-              <FileText className="h-6 w-6 text-chart-1" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-card-foreground">15+</p>
-              <p className="text-sm text-muted-foreground">Active Schemes</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-4 pt-6">
-            <div className="rounded-full bg-chart-2/10 p-3">
-              <IndianRupee className="h-6 w-6 text-chart-2" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-card-foreground">Rs. 2L+</p>
-              <p className="text-sm text-muted-foreground">Potential Benefits</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-4 pt-6">
-            <div className="rounded-full bg-chart-3/10 p-3">
-              <Users className="h-6 w-6 text-chart-3" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-card-foreground">12 Cr+</p>
-              <p className="text-sm text-muted-foreground">Beneficiaries</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-4 pt-6">
-            <div className="rounded-full bg-chart-4/10 p-3">
-              <Calendar className="h-6 w-6 text-chart-4" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-card-foreground">5</p>
-              <p className="text-sm text-muted-foreground">New This Year</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-col gap-4 sm:flex-row">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+    <div className="space-y-8 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div className="space-y-2">
+          <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border-none px-3 py-1 text-sm font-medium">
+            Government Schemes 2026
+          </Badge>
+          <h1 className="text-4xl font-extrabold tracking-tight text-slate-900">
+            Agricultural Empowerment
+          </h1>
+          <p className="text-lg text-slate-600 max-w-2xl">
+            Access financial aid, insurance, and technical support provided by the government to boost your farming productivity.
+          </p>
+        </div>
+        <div className="relative w-full md:w-96 group">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400 group-focus-within:text-emerald-600 transition-colors" />
           <Input
-            placeholder="Search schemes..."
+            placeholder="Search by name or category..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
+            className="pl-12 h-14 bg-white shadow-sm border-slate-200 focus:border-emerald-500 focus:ring-emerald-500 rounded-2xl text-base"
           />
         </div>
-        <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-          <SelectTrigger className="w-full sm:w-56">
-            <SelectValue placeholder="Filter by category" />
-          </SelectTrigger>
-          <SelectContent>
-            {categories.map((category) => (
-              <SelectItem key={category} value={category}>
-                {category}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
       </div>
 
-      {/* Schemes Grid */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <p className="text-muted-foreground">Loading schemes...</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-64 bg-slate-100 animate-pulse rounded-3xl" />
+          ))}
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {filteredSchemes.map((scheme) => (
             <Card
               key={scheme.id}
-              className="transition-all hover:shadow-lg cursor-pointer"
-              onClick={() => setExpandedScheme(expandedScheme === scheme.id ? null : scheme.id)}
+              className="group relative overflow-hidden bg-white hover:shadow-2xl transition-all duration-300 border-slate-100 rounded-3xl cursor-pointer flex flex-col"
+              onClick={() => setSelectedScheme(scheme)}
             >
-              <CardHeader>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <Badge variant="secondary" className="bg-primary/10 text-primary">
-                        {scheme.state || "General"}
-                      </Badge>
-                      <Badge variant="outline" className="border-chart-1 text-chart-1">
-                        Active
-                      </Badge>
-                    </div>
-                    <CardTitle className="text-lg">{scheme.title}</CardTitle>
-                    <CardDescription className="mt-2">
-                      {scheme.description}
-                    </CardDescription>
-                  </div>
-                  <ChevronRight className={`h-5 w-5 shrink-0 text-muted-foreground transition-transform ${expandedScheme === scheme.id ? 'rotate-90' : ''}`} />
+              <div className="absolute top-0 right-0 p-4">
+                <Badge variant="outline" className="bg-white/90 backdrop-blur-sm border-slate-200 text-slate-600 font-medium px-3 py-1 rounded-full flex items-center gap-1.5 uppercase text-[10px] tracking-wider">
+                  <Layers className="h-3 w-3" />
+                  {scheme.level || "Central"}
+                </Badge>
+              </div>
+              <CardHeader className="pt-10 pb-4">
+                <div className="h-14 w-14 rounded-2xl bg-emerald-50 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                  <IndianRupee className="h-7 w-7 text-emerald-600" />
                 </div>
+                <CardTitle className="text-xl font-bold text-slate-900 leading-snug group-hover:text-emerald-700 transition-colors">
+                  {scheme.title}
+                </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="flex items-center gap-2 rounded-lg bg-chart-1/10 px-3 py-1.5">
-                    <IndianRupee className="h-4 w-4 text-chart-1" />
-                    <span className="text-sm font-semibold text-chart-1">{scheme.link || "Monetary Benefit"}</span>
+              <CardContent className="flex-1 space-y-6">
+                <div className="space-y-4">
+                  <div className="flex items-start gap-4">
+                    <div className="p-2 bg-blue-50 rounded-xl">
+                      <Users className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">Eligibility</p>
+                      <p className="text-sm font-medium text-slate-700 line-clamp-2">{scheme.eligibility}</p>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Calendar className="h-4 w-4" />
-                    {scheme.deadline ? new Date(scheme.deadline).toLocaleDateString() : "Open Deadline"}
+                  <div className="flex items-start gap-4">
+                    <div className="p-2 bg-amber-50 rounded-xl">
+                      <IndianRupee className="h-5 w-5 text-amber-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">Key Benefit</p>
+                      <p className="text-sm font-medium text-slate-700 line-clamp-2">{scheme.benefits}</p>
+                    </div>
                   </div>
                 </div>
-
-                {expandedScheme === scheme.id && (
-                  <div className="mt-4 space-y-4 border-t border-border pt-4">
-                    <div>
-                      <h4 className="mb-2 text-sm font-semibold text-card-foreground">Eligibility Criteria:</h4>
-                      <ul className="space-y-1">
-                        {scheme.eligibility?.split('\n').map((item: string, index: number) => (
-                          <li key={index} className="flex items-start gap-2 text-sm text-muted-foreground">
-                            <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-chart-1" />
-                            {item}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button className="flex-1 gap-2">
-                        Apply Now
-                        <ExternalLink className="h-4 w-4" />
-                      </Button>
-                      <Button variant="outline">
-                        Check Eligibility
-                      </Button>
-                    </div>
-                  </div>
-                )}
               </CardContent>
+              <div className="p-6 pt-0 mt-auto">
+                <Button variant="ghost" className="w-full justify-between items-center text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 font-bold group/btn">
+                  Explore Full Details
+                  <Info className="h-5 w-5 group-hover/btn:rotate-12 transition-transform" />
+                </Button>
+              </div>
             </Card>
           ))}
         </div>
       )}
 
-      {filteredSchemes.length === 0 && (
-        <Card className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <FileText className="mx-auto h-12 w-12 text-muted-foreground" />
-            <h3 className="mt-4 text-lg font-semibold text-card-foreground">No schemes found</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Try adjusting your search or filter criteria
-            </p>
+      {/* Full Detail Sheet */}
+      <Sheet open={!!selectedScheme} onOpenChange={() => setSelectedScheme(null)}>
+        <SheetContent className="w-full sm:max-w-2xl bg-white p-0 overflow-y-auto border-l-0 shadow-2xl">
+          {selectedScheme && (
+            <div className="relative">
+              {/* Header Visual */}
+              <div className="h-32 bg-gradient-to-br from-emerald-600 to-emerald-800" />
+              <div className="px-8 -mt-12">
+                <div className="h-24 w-24 rounded-3xl bg-white shadow-xl flex items-center justify-center mb-6">
+                  <IndianRupee className="h-10 w-10 text-emerald-600" />
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <Badge className="bg-emerald-100 text-emerald-800 border-none px-3 py-1 rounded-full uppercase text-[10px] tracking-widest font-bold">
+                      {selectedScheme.category}
+                    </Badge>
+                    <div className="flex items-center gap-1.5 text-slate-400 text-xs font-medium">
+                       <MapPin className="h-3 w-3" />
+                       {selectedScheme.level} Level
+                    </div>
+                  </div>
+                  <h2 className="text-3xl font-extrabold text-slate-900 leading-tight">
+                    {selectedScheme.title}
+                  </h2>
+                </div>
+
+                <div className="mt-10 space-y-12 pb-20">
+                  {/* Summary Section */}
+                  <section>
+                    <div className="flex items-center gap-2 mb-4">
+                      <Info className="h-5 w-5 text-emerald-600" />
+                      <h3 className="text-lg font-bold text-slate-900">About the Scheme</h3>
+                    </div>
+                    <div className="p-6 bg-slate-50 rounded-3xl text-slate-700 leading-relaxed">
+                      {selectedScheme.description}
+                    </div>
+                  </section>
+
+                  {/* High Impact Stats */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="p-6 border border-slate-100 rounded-3xl bg-white shadow-sm">
+                       <ClipboardList className="h-6 w-6 text-emerald-600 mb-3" />
+                       <h4 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-2">Benefit Package</h4>
+                       <p className="text-slate-900 font-semibold">{selectedScheme.benefits}</p>
+                    </div>
+                    <div className="p-6 border border-slate-100 rounded-3xl bg-white shadow-sm">
+                       <CheckCircle2 className="h-6 w-6 text-blue-600 mb-3" />
+                       <h4 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-2">Eligibility Status</h4>
+                       <p className="text-slate-900 font-semibold">{selectedScheme.eligibility}</p>
+                    </div>
+                  </div>
+
+                  {/* Application Process */}
+                  <section>
+                    <div className="flex items-center gap-2 mb-6">
+                      <BookOpen className="h-5 w-5 text-emerald-600" />
+                      <h3 className="text-lg font-bold text-slate-900">Application & Documents</h3>
+                    </div>
+                    <div className="space-y-6">
+                      <div className="relative pl-8 border-l-2 border-emerald-100 pb-2">
+                        <div className="absolute -left-[9px] top-0 h-4 w-4 rounded-full bg-emerald-600 ring-4 ring-emerald-50" />
+                        <h4 className="font-bold text-slate-900 mb-1">Process Steps</h4>
+                        <p className="text-slate-600 leading-relaxed text-sm">{selectedScheme.applicationProcess}</p>
+                      </div>
+                      <div className="relative pl-8 border-l-2 border-emerald-100">
+                        <div className="absolute -left-[9px] top-0 h-4 w-4 rounded-full bg-blue-600 ring-4 ring-blue-50" />
+                        <h4 className="font-bold text-slate-900 mb-1">Documents Required</h4>
+                        <p className="text-slate-600 leading-relaxed text-sm">{selectedScheme.documentsRequired}</p>
+                      </div>
+                    </div>
+                  </section>
+                  
+                  <div className="pt-6">
+                    <Button className="w-full h-14 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-2xl shadow-xl shadow-emerald-200">
+                      Apply through Official Portal
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {filteredSchemes.length === 0 && !isLoading && (
+        <Card className="flex flex-col items-center justify-center py-20 bg-slate-50 border-dashed border-2 border-slate-200 rounded-[3rem]">
+          <div className="bg-white p-6 rounded-full shadow-lg mb-6">
+            <FileText className="h-14 w-14 text-slate-300" />
           </div>
+          <h3 className="text-2xl font-bold text-slate-900">No matching schemes</h3>
+          <p className="mt-2 text-slate-500 text-center max-w-sm">
+            Try searching for common terms like "Income", "Fertilizer", or check your spelling.
+          </p>
+          <Button variant="link" onClick={() => setSearchQuery("")} className="mt-4 text-emerald-600 font-bold">
+            Clear all filters
+          </Button>
         </Card>
       )}
     </div>

@@ -226,7 +226,18 @@ export async function getSchemes() {
     }
 }
 
-export async function createScheme(data: { name: string, description: string, benefit: string, deadline: string, eligibility: string, category: string }) {
+export async function createScheme(data: { 
+    name: string, 
+    description: string, 
+    benefits: string, 
+    eligibility: string, 
+    applicationProcess: string, 
+    documentsRequired: string,
+    level: string,
+    category: string,
+    tags: string,
+    deadline?: string 
+}) {
     const session = await getServerSession(authOptions);
     if ((session?.user as any)?.role !== "ADMIN") throw new Error("Unauthorized");
 
@@ -235,17 +246,76 @@ export async function createScheme(data: { name: string, description: string, be
             data: {
                 title: data.name,
                 description: data.description,
-                department: "Agriculture", // default
-                eligibility: data.eligibility, // Storing as string or JSON string
-                deadline: new Date(data.deadline),
-                // Storing specific custom fields into link/state for now until schema expands
-                link: data.benefit,
-                state: data.category,
+                benefits: data.benefits,
+                eligibility: data.eligibility,
+                applicationProcess: data.applicationProcess,
+                documentsRequired: data.documentsRequired,
+                level: data.level,
+                category: data.category,
+                tags: data.tags,
+                deadline: data.deadline ? new Date(data.deadline) : null,
             }
         });
         revalidatePath("/admin");
         revalidatePath("/schemes");
         return { success: true };
+    } catch (error: any) {
+        return { error: error.message };
+    }
+}
+
+export async function bulkImportSchemes(csvText: string) {
+    const session = await getServerSession(authOptions);
+    if ((session?.user as any)?.role !== "ADMIN") throw new Error("Unauthorized");
+
+    try {
+        const rows = csvText.split('\n').map(row => {
+            // Improved CSV parser to handle quotes correctly
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            for (let i = 0; i < row.length; i++) {
+                const char = row[i];
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    result.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            result.push(current.trim());
+            return result;
+        });
+        
+        const headers = rows.shift(); // scheme,slug,details,benefits,eligibility,application_process,documents_required,level,scheme_category,tags
+
+        let imported = 0;
+        for (const row of rows) {
+            if (row.length >= 1 && row[0]) {
+                const [scheme, slug, details, benefits, eligibility, application_process, documents_required, level, scheme_category, tags] = row;
+                
+                await prisma.scheme.create({
+                    data: {
+                        title: scheme,
+                        slug: slug || null,
+                        description: details || "",
+                        benefits: benefits || "",
+                        eligibility: eligibility || "",
+                        applicationProcess: application_process || "",
+                        documentsRequired: documents_required || "",
+                        level: level || "Central",
+                        category: scheme_category || "Agriculture",
+                        tags: tags || ""
+                    }
+                }).catch(e => console.error("Import error for row", scheme, e));
+                imported++;
+            }
+        }
+        revalidatePath("/admin");
+        revalidatePath("/schemes");
+        return { success: true, count: imported };
     } catch (error: any) {
         return { error: error.message };
     }
