@@ -169,7 +169,7 @@ export async function bulkImportFarmers(data: any[][]) {
         return { success: true, count: result.count };
     } catch (error: any) {
         console.error("Farmers Import Critical Error:", error);
-        return { error: "A critical error occurred. Please check your file format." };
+        return { error: `Farmers Import error: ${error.message || "Please check your file format."}` };
     }
 }
 
@@ -268,7 +268,6 @@ export async function createScheme(data: {
                 tags: data.tags,
                 state: "All India",
                 link: "",
-                department: "",
                 deadline: data.deadline ? new Date(data.deadline) : null,
             }
         });
@@ -311,8 +310,7 @@ export async function bulkImportSchemes(data: any[][]) {
                     category: scheme_category || "Agriculture",
                     tags: tags || "",
                     state: "All India",
-                    link: "",
-                    department: ""
+                    link: ""
                 });
             }
         }
@@ -329,7 +327,7 @@ export async function bulkImportSchemes(data: any[][]) {
         return { success: true, count: result.count };
     } catch (error: any) {
         console.error("Bulk Import Critical Error:", error);
-        return { error: "A critical error occurred. Please check your file format." };
+        return { error: `Critical error: ${error.message || "Please check your file format."}` };
     }
 }
 
