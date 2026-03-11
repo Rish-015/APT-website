@@ -41,8 +41,11 @@ export default function LoginPage() {
         throw new Error(res.error)
       } else {
         toast.success("Welcome back!")
-        const session = await getSession()
-        window.location.href = ((session?.user as any)?.role === "ADMIN") ? "/admin" : "/dashboard"
+        // Use a small delay to ensure cookies are set before redirecting
+        setTimeout(() => {
+          // Hard refresh redirect is more reliable on live sites for session synchronization
+          window.location.href = loginIdentifier.toLowerCase().includes('admin') ? "/admin" : "/dashboard"
+        }, 800)
       }
     } catch (error: any) {
       toast.error("Invalid credentials. Please verify your details and try again.")
@@ -85,8 +88,9 @@ export default function LoginPage() {
         toast.error("Invalid OTP or Mobile Number not registered. Please use Password login for now.")
       } else {
         toast.success("Welcome back!")
-        const session = await getSession()
-        window.location.href = ((session?.user as any)?.role === "ADMIN") ? "/admin" : "/dashboard"
+        setTimeout(() => {
+          window.location.href = "/dashboard"
+        }, 800)
       }
     } catch (error: any) {
       toast.error(error.message)
