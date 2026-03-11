@@ -326,8 +326,8 @@ export async function bulkImportSchemes(data: any[][]) {
         revalidatePath("/schemes");
         return { success: true, count: result.count };
     } catch (error: any) {
-        console.error("Bulk Import Critical Error:", error);
-        return { error: `Critical error: ${error.message || "Please check your file format."}` };
+        console.error("Bulk Import Critical Error [V2]:", error);
+        return { error: `Critical error [V2]: ${error.message || "Please check your file format."}` };
     }
 }
 
