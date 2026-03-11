@@ -5,7 +5,7 @@ import { TrendingUp, TrendingDown, Search, Filter, MapPin, ArrowUpDown, Loader2 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { fetchMandiPrices } from "@/lib/api/market-prices"
+import { getMarketPrices } from "@/app/actions"
 import { useSession } from "next-auth/react"
 import {
   Select,
@@ -57,10 +57,10 @@ export default function MarketPricesPage() {
     async function loadData() {
       setIsLoading(true)
       try {
-        const data = await fetchMandiPrices(100) // fetch top 100 prices
+        const data = await getMarketPrices(100) // fetch top 100 prices
 
         // Map data to the table format
-        const formattedData = data.map(item => {
+        const formattedData = data.map((item: any) => {
           // generate a mock change percentage just for UI completeness since API only gives current price
           const randomChange = (Math.random() * 10 - 5).toFixed(1)
 
@@ -77,7 +77,7 @@ export default function MarketPricesPage() {
         setMarketPrices(formattedData)
 
         // Extract unique markets for the filter
-        const uniqueMarkets = Array.from(new Set(data.map(item => item.market))).filter(Boolean) as string[]
+        const uniqueMarkets = Array.from(new Set(data.map((item: any) => item.market))).filter(Boolean) as string[]
         setMarkets(["All Markets", ...uniqueMarkets])
 
         // Auto-select user's local market if available

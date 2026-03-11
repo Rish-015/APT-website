@@ -401,3 +401,13 @@ export async function getDashboardAlerts(user: any) {
     }
 }
 
+export async function getMarketPrices(limit = 100) {
+    const { fetchMandiPrices } = await import("@/lib/api/market-prices");
+    try {
+        const prices = await fetchMandiPrices(limit);
+        return prices;
+    } catch (error) {
+        console.error("Error in getMarketPrices action:", error);
+        return [];
+    }
+}
