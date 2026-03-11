@@ -379,12 +379,12 @@ export default function AdminPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Crops</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Joined</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead className="w-[25%]">Name</TableHead>
+                      <TableHead className="w-[15%]">Location</TableHead>
+                      <TableHead className="w-[25%]">Crops</TableHead>
+                      <TableHead className="w-[10%]">Status</TableHead>
+                      <TableHead className="w-[15%]">Joined</TableHead>
+                      <TableHead className="w-[10%] text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -400,14 +400,14 @@ export default function AdminPage() {
                     ) : filteredFarmers.length > 0 ? (
                       filteredFarmers.map((farmer) => (
                         <TableRow key={farmer.id} className="group">
-                          <TableCell>
-                            <div>
-                              <p className="font-medium">{farmer.name}</p>
-                              <p className="text-xs text-muted-foreground">{farmer.email}</p>
+                          <TableCell className="overflow-hidden">
+                            <div className="max-w-full">
+                              <p className="font-medium truncate" title={farmer.name}>{farmer.name}</p>
+                              <p className="text-xs text-muted-foreground truncate" title={farmer.email}>{farmer.email}</p>
                             </div>
                           </TableCell>
-                          <TableCell>{farmer.location}</TableCell>
-                          <TableCell>{farmer.crops}</TableCell>
+                          <TableCell className="truncate" title={farmer.location}>{farmer.location}</TableCell>
+                          <TableCell className="max-w-[200px] truncate" title={farmer.crops}>{farmer.crops}</TableCell>
                           <TableCell>
                             <Badge variant={farmer.status === 'active' ? 'default' : 'secondary'}>
                               {farmer.status}
@@ -469,11 +469,11 @@ export default function AdminPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Scheme Name</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Level</TableHead>
-                      <TableHead>Benefit Summary</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead className="w-[35%]">Scheme Name</TableHead>
+                      <TableHead className="w-[15%]">Category</TableHead>
+                      <TableHead className="w-[10%]">Level</TableHead>
+                      <TableHead className="w-[30%]">Benefit Summary</TableHead>
+                      <TableHead className="w-[10%] text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -481,10 +481,10 @@ export default function AdminPage() {
                       <TableRow><TableCell colSpan={5} className="text-center py-6">Loading schemes...</TableCell></TableRow>
                     ) : schemes.map((scheme) => (
                       <TableRow key={scheme.id}>
-                        <TableCell className="font-medium">{scheme.title}</TableCell>
-                        <TableCell>{scheme.category}</TableCell>
-                        <TableCell>{scheme.level}</TableCell>
-                        <TableCell className="max-w-xs truncate">{scheme.benefits}</TableCell>
+                        <TableCell className="font-medium truncate" title={scheme.title}>{scheme.title}</TableCell>
+                        <TableCell className="truncate" title={scheme.category}>{scheme.category}</TableCell>
+                        <TableCell className="truncate">{scheme.level}</TableCell>
+                        <TableCell className="truncate" title={scheme.benefits}>{scheme.benefits}</TableCell>
                         <TableCell className="text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
