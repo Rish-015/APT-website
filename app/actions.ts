@@ -491,3 +491,52 @@ export async function getMarketPrices(limit = 100) {
         return [];
     }
 }
+
+// ============================================
+// AI CHATBOT ACTIONS
+// ============================================
+
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+
+export async function getChatResponse(message: string, history: { role: "user" | "model", parts: { text: string }[] }[]) {
+    try {
+        if (!process.env.GEMINI_API_KEY) {
+            return { 
+                error: "Chatbot is in offline mode (API Key missing). Please contact the administrator.",
+                content: "I'm currently in offline mode. Once my API key is configured, I'll be able to help you better with farming queries!" 
+            };
+        }
+
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-1.5-flash",
+            systemInstruction: `You are the Agro Assistant, a specialized AI for the 'Agro Puthalvan' platform. 
+            Agro Puthalvan is a comprehensive agricultural empowerment portal for farmers.
+            
+            Your Expertise:
+            1. Government Schemes: Guide users on PM-KISAN, PMFBY, KCC, and other state/central schemes.
+            2. Crop Management: Provide advice on sowing, fertilizers (NPK ratios), and irrigation.
+            3. Disease Detection: Direct users to our 'Disease Detection' section for image-based analysis.
+            4. Market Prices: Discuss price trends (Rice, Wheat, Cotton, etc.) generally or based on current mandi rates.
+            5. Platform Navigation: Help users find sections like Crop Recommendation, Community Forum, and Weather.
+
+            Tone: Professional, helpful, empathetic to farmers' needs, and encouraging.
+            Response Style: Keep answers concise and actionable. Use bullet points for steps. 
+            Languages: Primarily English, but if the user asks in Tamil or Hindi, respond in that language if possible.
+
+            If you don't know specific real-time data (like today's exact price in a specific small market), advise the user to check the 'Market Prices' section of our app for live updates.`
+        });
+
+        const chat = model.startChat({
+            history: history,
+        });
+
+        const result = await chat.sendMessage(message);
+        const response = await result.response;
+        return { content: response.text() };
+    } catch (error: any) {
+        console.error("Gemini Chat Error:", error);
+        return { error: "Failed to connect to AI assistant. Please try again later." };
+    }
+}

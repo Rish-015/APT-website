@@ -1,10 +1,12 @@
 "use client"
 
-import { useState } from "react"
-import { Bot, X, Send, Minimize2 } from "lucide-react"
+import { useState, useRef, useEffect } from "react"
+import { Bot, X, Send, Minimize2, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
+import { getChatResponse } from "@/app/actions"
+import { toast } from "sonner"
 
 interface Message {
   id: string
@@ -28,8 +30,17 @@ export function ChatbotWidget() {
   const [messages, setMessages] = useState<Message[]>(initialMessages)
   const [input, setInput] = useState("")
 
-  const handleSend = () => {
-    if (!input.trim()) return
+  const [isTyping, setIsTyping] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [messages, isTyping])
+
+  const handleSend = async () => {
+    if (!input.trim() || isTyping) return
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -40,25 +51,43 @@ export function ChatbotWidget() {
 
     setMessages((prev) => [...prev, userMessage])
     setInput("")
+    setIsTyping(true)
 
-    // Simulate bot response
-    setTimeout(() => {
-      const botResponses = [
-        "Based on your soil conditions, I recommend planting rice or wheat during the monsoon season.",
-        "The weather forecast shows favorable conditions for the next 7 days. Good time for sowing!",
-        "For better yield, consider using NPK fertilizer in the ratio of 4:2:1 for your paddy crop.",
-        "I can help you identify plant diseases. Please upload an image in the Disease Detection section.",
-        "Current market price for rice is Rs. 2,100 per quintal in your local mandi.",
-      ]
-      
-      const botMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: botResponses[Math.floor(Math.random() * botResponses.length)],
-        sender: "bot",
-        timestamp: new Date(),
+    try {
+      // Format history for Gemini
+      const history = messages.map(msg => ({
+        role: msg.sender === "user" ? "user" as const : "model" as const,
+        parts: [{ text: msg.content }]
+      }));
+
+      const response = await getChatResponse(input, history);
+
+      if (response.error) {
+        toast.error(response.error);
+        if (response.content) {
+          const botMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            content: response.content,
+            sender: "bot",
+            timestamp: new Date(),
+          }
+          setMessages((prev) => [...prev, botMessage])
+        }
+      } else if (response.content) {
+        const botMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          content: response.content,
+          sender: "bot",
+          timestamp: new Date(),
+        }
+        setMessages((prev) => [...prev, botMessage])
       }
-      setMessages((prev) => [...prev, botMessage])
-    }, 1000)
+    } catch (error) {
+      console.error("Chat Error:", error);
+      toast.error("An unexpected error occurred. Please try again.");
+    } finally {
+      setIsTyping(false)
+    }
   }
 
   if (!isOpen) {
@@ -112,7 +141,7 @@ export function ChatbotWidget() {
       {!isMinimized && (
         <>
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4">
+          <div className="flex-1 overflow-y-auto p-4" ref={scrollRef}>
             <div className="flex flex-col gap-4">
               {messages.map((message) => (
                 <div
@@ -126,7 +155,7 @@ export function ChatbotWidget() {
                     className={cn(
                       "max-w-[85%] rounded-lg px-3 py-2 text-sm",
                       message.sender === "user"
-                        ? "bg-primary text-primary-foreground"
+                        ? "bg-primary text-primary-foreground shadow-sm"
                         : "bg-muted text-muted-foreground"
                     )}
                   >
@@ -134,6 +163,14 @@ export function ChatbotWidget() {
                   </div>
                 </div>
               ))}
+              {isTyping && (
+                <div className="flex justify-start">
+                  <div className="bg-muted text-muted-foreground flex items-center gap-2 max-w-[85%] rounded-lg px-3 py-2 text-sm italic">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Agro Assistant is thinking...
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -149,11 +186,12 @@ export function ChatbotWidget() {
               <Input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask a question..."
+                placeholder={isTyping ? "Please wait..." : "Ask a question..."}
                 className="flex-1"
+                disabled={isTyping}
               />
-              <Button type="submit" size="icon">
-                <Send className="h-4 w-4" />
+              <Button type="submit" size="icon" disabled={isTyping || !input.trim()}>
+                {isTyping ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 <span className="sr-only">Send message</span>
               </Button>
             </form>
