@@ -6,6 +6,8 @@ import { authOptions } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { fetchWeatherData, getWeatherConditionText } from "@/lib/api/weather";
+import { fetchMandiPrices } from "@/lib/api/market-prices";
 
 // ============================================
 // ADMIN & FARMERS (USERS) ACTIONS
@@ -498,45 +500,134 @@ export async function getMarketPrices(limit = 100) {
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 export async function getChatResponse(message: string, history: { role: "user" | "model", parts: { text: string }[] }[]) {
     try {
-        if (!process.env.GEMINI_API_KEY) {
+        const apiKey = process.env.GEMINI_API_KEY;
+
+        if (!apiKey) {
             return { 
                 error: "Chatbot is in offline mode (API Key missing). Please contact the administrator.",
                 content: "I'm currently in offline mode. Once my API key is configured, I'll be able to help you better with farming queries!" 
             };
         }
 
+        const genAI = new GoogleGenerativeAI(apiKey);
+        
+        // Define tools for function calling
+        const tools = [
+            {
+                functionDeclarations: [
+                    {
+                        name: "get_weather",
+                        description: "Get real-time weather information for a specific location (defaults to Chennai, Tamil Nadu).",
+                        parameters: {
+                            type: "object",
+                            properties: {
+                                location: { type: "string", description: "The city/location name." }
+                            }
+                        }
+                    },
+                    {
+                        name: "get_market_prices",
+                        description: "Get current mandi prices for agricultural commodities.",
+                        parameters: {
+                            type: "object",
+                            properties: {
+                                commodity: { type: "string", description: "The crop/commodity name (e.g., Rice, Wheat)." },
+                                state: { type: "string", description: "The state name (e.g., Tamil Nadu, Punjab)." }
+                            }
+                        }
+                    },
+                    {
+                        name: "get_government_schemes",
+                        description: "Get all available government farming schemes from the Agro Puthalvan platform.",
+                        parameters: { type: "object", properties: {} }
+                    }
+                ]
+            }
+        ];
+
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-1.5-flash",
+            model: "gemini-2.5-flash",
+            tools: tools as any,
             systemInstruction: `You are the Agro Assistant, a specialized AI for the 'Agro Puthalvan' platform. 
             Agro Puthalvan is a comprehensive agricultural empowerment portal for farmers.
             
             Your Expertise:
-            1. Government Schemes: Guide users on PM-KISAN, PMFBY, KCC, and other state/central schemes.
+            1. Government Schemes: Guide users on PM-KISAN, PMFBY, KCC, and other state/central schemes. Use 'get_government_schemes' to see what we offer.
             2. Crop Management: Provide advice on sowing, fertilizers (NPK ratios), and irrigation.
             3. Disease Detection: Direct users to our 'Disease Detection' section for image-based analysis.
-            4. Market Prices: Discuss price trends (Rice, Wheat, Cotton, etc.) generally or based on current mandi rates.
-            5. Platform Navigation: Help users find sections like Crop Recommendation, Community Forum, and Weather.
+            4. Market Prices: Use 'get_market_prices' to give real data on price trends.
+            5. Weather: Use 'get_weather' to provide real-time updates for Chennai or other locations.
+            6. Platform Navigation: Help users find sections like Crop Recommendation, Community Forum, and Weather.
 
             Tone: Professional, helpful, empathetic to farmers' needs, and encouraging.
-            Response Style: Keep answers concise and actionable. Use bullet points for steps. 
-            Languages: Primarily English, but if the user asks in Tamil or Hindi, respond in that language if possible.
+            Response Style: Keep answers concise and actionable. Use bullet points for steps. Most users will be interacting via voice, so keep sentences simple.
+            Languages: You must respond in the language the user is speaking or has selected (English, Tamil, or Hindi). If the user asks in Tamil, reply in Tamil. If Hindi, reply in Hindi.
 
-            If you don't know specific real-time data (like today's exact price in a specific small market), advise the user to check the 'Market Prices' section of our app for live updates.`
+            IMPORTANT: When a user asks about weather, market prices, or schemes, ALWAYS use the provided tools to get real data instead of saying you don't know.`
         });
+
+        const firstUserIndex = history.findIndex(m => m.role === "user");
+        const validHistory = firstUserIndex !== -1 ? history.slice(firstUserIndex) : [];
 
         const chat = model.startChat({
-            history: history,
+            history: validHistory,
         });
 
-        const result = await chat.sendMessage(message);
-        const response = await result.response;
+        let result = await chat.sendMessage(message);
+        let response = await result.response;
+
+        // Handle possible function calls
+        const calls = response.candidates?.[0]?.content?.parts?.filter(p => p.functionCall);
+        
+        if (calls && calls.length > 0) {
+            const toolResponses: any[] = [];
+            
+            for (const call of calls) {
+                const { name, args } = call.functionCall!;
+                console.log(`AI calling tool: ${name}`, args);
+                
+                if (name === "get_weather") {
+                    // Chennai default coords
+                    const weather = await fetchWeatherData(); 
+                    if (weather) {
+                        const condition = getWeatherConditionText(weather.current.conditionCode);
+                        toolResponses.push({
+                            role: "function",
+                            name: name,
+                            content: `Current Weather in Chennai: ${weather.current.temperature}°C, ${condition}. Humidity: ${weather.current.humidity}%, Wind: ${weather.current.windSpeed} km/h.`
+                        });
+                    } else {
+                        toolResponses.push({ role: "function", name: name, content: "Unable to fetch weather data at the moment." });
+                    }
+                } else if (name === "get_market_prices") {
+                    const prices = await fetchMandiPrices(5, 0, { commodity: (args as any).commodity, state: (args as any).state });
+                    toolResponses.push({
+                        role: "function",
+                        name: name,
+                        content: prices.length > 0 ? JSON.stringify(prices.slice(0, 3)) : "No market data found for this commodity."
+                    });
+                } else if (name === "get_government_schemes") {
+                    const schemes = await prisma.scheme.findMany({ take: 5 });
+                    toolResponses.push({
+                        role: "function",
+                        name: name,
+                        content: JSON.stringify(schemes.map(s => s.title))
+                    });
+                }
+            }
+
+            // Send tool responses back to model to get final answer
+            // Using the simpler approach: just include the data in a follow-up or re-prompt
+            const followUp = await chat.sendMessage(toolResponses.map(r => r.content).join("\n"));
+            return { content: followUp.response.text() };
+        }
+
         return { content: response.text() };
     } catch (error: any) {
         console.error("Gemini Chat Error:", error);
-        return { error: "Failed to connect to AI assistant. Please try again later." };
+        return { error: "Failed to connect to Agro Assistant. Please ensure your internet is active and try again." };
     }
 }
