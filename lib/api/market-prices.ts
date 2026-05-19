@@ -48,7 +48,9 @@ export async function fetchMandiPrices(limit = 100, offset = 0, filters: Record<
 
         // Add any specific filters (like State or Commodity)
         Object.entries(filters).forEach(([key, value]) => {
-            params.append(`filters[${key}]`, value);
+            if (value && value.trim() !== '') {
+                params.append(`filters[${key}]`, value);
+            }
         });
 
         const response = await axios.get(`${BASE_URL}?${params.toString()}`);

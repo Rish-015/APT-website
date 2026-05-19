@@ -53,6 +53,7 @@ export async function POST(req: Request) {
                 longitude: longitude ? parseFloat(longitude) : null,
                 password: hashedPassword,
                 role: email === "admin@agro.com" ? "ADMIN" : "USER",
+                isApproved: email === "admin@agro.com" ? true : false,
             }
         });
 

@@ -31,15 +31,20 @@ export default function LoginPage() {
     const password = formData.get("password") as string
 
     try {
-      const res = await signIn('credentials', {
-        email: loginIdentifier,
-        password,
-        redirect: false,
-      })
+        const res = await signIn('credentials', {
+            email: loginIdentifier,
+            password,
+            loginRole: role,
+            redirect: false,
+        })
 
-      if (res?.error) {
-        throw new Error(res.error)
-      } else {
+        if (res?.error) {
+            if (res.error.includes("pending approval")) {
+                toast.error("Your account is pending approval by the admin. Please wait for confirmation.")
+            } else {
+                toast.error(res.error)
+            }
+        } else {
         toast.success("Welcome back!")
         // Use a small delay to ensure cookies are set before redirecting
         setTimeout(() => {
@@ -80,7 +85,8 @@ export default function LoginPage() {
     try {
       const res = await signIn('credentials', {
         email: mobileNumber,
-        password: otp, // we can't truly login with OTP yet since DB expects hashed passwords.
+        password: otp,
+        loginRole: role,
         redirect: false,
       })
 

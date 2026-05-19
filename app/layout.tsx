@@ -22,6 +22,8 @@ export const metadata: Metadata = {
   },
 }
 
+import { ForcePasswordChange } from '@/components/auth/force-password-change'
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -32,7 +34,7 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <AuthProvider>
           {children}
-          {/* <GlobalPasswordReset /> */}
+          <ForcePasswordChange />
           <Toaster position="top-center" />
           <Analytics />
           <Suspense fallback={null}>

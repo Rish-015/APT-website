@@ -49,6 +49,7 @@ model VerificationToken {
 enum Role {
   USER
   ADMIN
+  OFFICER
 }
 
 model User {
@@ -66,6 +67,7 @@ model User {
   latitude      Float?
   longitude     Float?
   role          Role      @default(USER)
+  isApproved    Boolean   @default(false)
   mustChangePassword Boolean @default(false)
   accounts      Account[]
   sessions      Session[]

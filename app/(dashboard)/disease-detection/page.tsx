@@ -1,15 +1,23 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Upload, ImageIcon, RefreshCw, AlertCircle, CheckCircle2 } from "lucide-react"
+import { Upload, ImageIcon, RefreshCw, AlertCircle, CheckCircle2, Volume2, ShieldCheck, Stethoscope } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { detectDiseaseAction } from "@/app/actions"
+import { toast } from "sonner"
+
+interface DiagnosisResult {
+  disease: string
+  solution: string
+  prevention: string
+}
 
 export default function DiseaseDetectionPage() {
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
-  const [result, setResult] = useState<{ disease: string; remedy: string } | null>(null)
+  const [result, setResult] = useState<DiagnosisResult | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -34,6 +42,31 @@ export default function DiseaseDetectionPage() {
     }
   }
 
+  const getCurrentLanguage = () => {
+    if (typeof document === 'undefined') return "English"
+    const googtrans = document.cookie.split('; ').find(row => row.startsWith('googtrans='))
+    if (googtrans) {
+      const lang = googtrans.split('=')[1].split('/').pop() || "en"
+      if (lang === 'ta') return "Tamil"
+      if (lang === 'hi') return "Hindi"
+    }
+    return "English"
+  }
+
+  const speak = useCallback((text: string) => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(text)
+    
+    // Attempt to find a matching voice
+    const lang = getCurrentLanguage()
+    if (lang === "Tamil") utterance.lang = "ta-IN"
+    else if (lang === "Hindi") utterance.lang = "hi-IN"
+    else utterance.lang = "en-IN"
+
+    window.speechSynthesis.speak(utterance)
+  }, [])
+
   const handleSubmit = async () => {
     if (!file) return
 
@@ -41,28 +74,33 @@ export default function DiseaseDetectionPage() {
     setError(null)
     setResult(null)
 
-    const formData = new FormData()
-    formData.append("image", file)
-
     try {
-      const mlApiUrl = process.env.NEXT_PUBLIC_ML_API_URL || "http://localhost:5000"
-      const response = await fetch(`${mlApiUrl}/api/predict-disease`, {
-        method: "POST",
-        body: formData,
+      // Convert file to base64
+      const reader = new FileReader()
+      const base64Promise = new Promise<string>((resolve) => {
+        reader.onload = () => resolve(reader.result as string)
+        reader.readAsDataURL(file)
       })
+      const base64Image = await base64Promise
 
-      const data = await response.json()
+      const language = getCurrentLanguage()
+      const response = await detectDiseaseAction(base64Image, language)
 
-      if (data.success) {
+      if (response.success && response.disease) {
         setResult({
-          disease: data.disease,
-          remedy: data.remedy
+          disease: response.disease,
+          solution: response.solution || "No specific remedy provided.",
+          prevention: response.prevention || "General good farming practices are recommended."
         })
+        toast.success("Crop analysis complete!")
       } else {
-        setError(data.error || "Failed to detect disease")
+        setError(response.error || "Failed; no leaf detected or analysis error.")
+        if (response.error?.includes("No leaf detected")) {
+          toast.error("Leaf detection failed.")
+        }
       }
     } catch (err) {
-      setError("Cannot connect to AI Model Service. Make sure python api.py is running on port 5000.")
+      setError("AI Analysis failed. Please try again later.")
     } finally {
       setIsLoading(false)
     }
@@ -74,61 +112,64 @@ export default function DiseaseDetectionPage() {
     setPreview(null)
     setResult(null)
     setError(null)
+    window.speechSynthesis.cancel()
   }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground lg:text-3xl">Disease Detection Scanner</h1>
-        <p className="text-muted-foreground">Upload a photo of your plant's leaves to instantly diagnose potential diseases and get actionable remedies.</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground lg:text-3xl">AI Disease Scanner</h1>
+          <p className="text-muted-foreground">Diagnose crop diseases instantly with advanced Gemini Vision AI.</p>
+        </div>
+        <Button variant="outline" className="w-fit" onClick={handleReset}>
+          <RefreshCw className="mr-2 h-4 w-4" /> Reset Scanner
+        </Button>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
         {/* Upload Column */}
-        <Card>
+        <Card className="border-primary/20 bg-primary/5">
           <CardHeader>
-            <CardTitle>Image Scanner</CardTitle>
-            <CardDescription>Upload a clear image of the affected plant leaf.</CardDescription>
+            <CardTitle className="text-primary flex items-center gap-2">
+              <Upload className="h-5 w-5" /> Image Input
+            </CardTitle>
+            <CardDescription>Upload a clear photo of the plant leaf (diseased or healthy).</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {!preview ? (
               <div
-                className="border-2 border-dashed border-border rounded-lg p-12 text-center hover:bg-muted/50 transition-colors cursor-pointer"
+                className="border-2 border-dashed border-primary/30 rounded-xl p-12 text-center hover:bg-primary/10 transition-all cursor-pointer group"
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={handleDrop}
                 onClick={() => document.getElementById("file-upload")?.click()}
               >
-                <Upload className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="font-semibold text-foreground">Click or Drag & Drop</h3>
-                <p className="text-sm text-muted-foreground mt-1">JPEG, PNG, or WEBP up to 5MB</p>
-                <input
-                  id="file-upload"
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
+                <div className="mx-auto h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                  <Upload className="h-8 w-8 text-primary" />
+                </div>
+                <h3 className="font-semibold text-foreground text-lg">Click or Drag & Drop</h3>
+                <p className="text-sm text-muted-foreground mt-2 max-w-[200px] mx-auto">Upload a clear leaf image up to 10MB (JPEG, PNG, WEBP)</p>
+                <input id="file-upload" type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="relative rounded-lg overflow-hidden border border-border h-64 bg-black/5 flex items-center justify-center">
+                <div className="relative rounded-xl overflow-hidden border-2 border-primary/20 h-80 bg-black/5 flex items-center justify-center shadow-inner">
                   <img src={preview} alt="Upload preview" className="max-h-full max-w-full object-contain" />
                 </div>
-                <div className="flex gap-2">
-                  <Button className="flex-1" onClick={handleSubmit} disabled={isLoading}>
-                    {isLoading ? "Scanning via AI..." : "Scan Plant"}
-                  </Button>
-                  <Button variant="outline" size="icon" onClick={handleReset} disabled={isLoading}>
-                    <RefreshCw className="h-4 w-4" />
-                  </Button>
-                </div>
+                <Button className="w-full h-12 text-lg shadow-lg hover:shadow-primary/20 transition-all" onClick={handleSubmit} disabled={isLoading}>
+                  {isLoading ? (
+                    <>
+                      <RefreshCw className="mr-2 h-5 w-5 animate-spin" /> Analyzing Leaf...
+                    </>
+                  ) : "Detect Disease"}
+                </Button>
               </div>
             )}
 
             {error && (
-              <Alert variant="destructive">
+              <Alert variant="destructive" className="animate-in fade-in duration-300">
                 <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Scan Failed</AlertTitle>
+                <AlertTitle>Validation Error</AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
@@ -136,42 +177,77 @@ export default function DiseaseDetectionPage() {
         </Card>
 
         {/* Results Column */}
-        <Card className={result ? "bg-chart-2/5 border-chart-2/20" : ""}>
+        <Card className={cn("transition-all duration-500", result ? "bg-chart-2/5 border-chart-2/30 shadow-lg" : "border-muted bg-muted/20 opacity-80")}>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ImageIcon className="h-5 w-5" />
+            <CardTitle className="flex items-center gap-2 text-foreground">
+              <ImageIcon className="h-5 w-5 text-chart-2" />
               Diagnosis Report
             </CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="h-64 flex flex-col items-center justify-center space-y-4 text-muted-foreground animate-pulse">
-                <div className="w-16 h-16 rounded-full border-4 border-chart-1 border-t-transparent animate-spin" />
-                <p>Analyzing leaf structures and comparing to dataset...</p>
+              <div className="h-80 flex flex-col items-center justify-center space-y-6 text-muted-foreground">
+                <div className="relative">
+                  <div className="w-20 h-20 rounded-full border-4 border-chart-2 border-t-transparent animate-spin" />
+                  <Stethoscope className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-8 w-8 text-chart-2 animate-pulse" />
+                </div>
+                <div className="text-center space-y-1">
+                  <p className="font-semibold text-foreground">AI is examining the image...</p>
+                  <p className="text-sm">Identifying patterns and symptoms...</p>
+                </div>
               </div>
             ) : result ? (
-              <div className="space-y-6">
-                <div className="flex items-start gap-4 p-4 rounded-lg bg-background border border-border">
-                  <div className="p-2 rounded-full bg-chart-2/20 shrink-0">
-                    <CheckCircle2 className="h-6 w-6 text-chart-2" />
+              <div className="space-y-6 animate-in slide-in-from-right duration-500">
+                <div className="flex items-start gap-4 p-5 rounded-xl bg-background border-2 border-chart-2/20 shadow-sm relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity">
+                    <CheckCircle2 className="h-16 w-16 text-chart-2" />
+                  </div>
+                  <div className="p-3 rounded-lg bg-chart-2/10 shrink-0">
+                    <ShieldCheck className="h-6 w-6 text-chart-2" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-lg text-foreground">{result.disease}</h3>
-                    <p className="text-sm font-medium text-muted-foreground mt-1">AI Confidence: High</p>
+                    <h3 className="font-bold text-xl text-foreground">{result.disease}</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="flex h-2 w-2 rounded-full bg-chart-2 animate-pulse" />
+                      <p className="text-xs font-semibold text-chart-2 uppercase tracking-wider">AI Confirmed</p>
+                    </div>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <h4 className="font-semibold text-foreground">Recommended Remedy</h4>
-                  <div className="p-4 rounded-lg bg-primary/10 text-primary-foreground">
-                    <p className="text-sm leading-relaxed text-foreground">{result.remedy}</p>
+                <div className="grid gap-4">
+                  <div className="space-y-3 bg-background p-5 rounded-xl border border-border shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-foreground flex items-center gap-2">
+                        <Stethoscope className="h-4 w-4 text-primary" /> Recommended Solution
+                      </h4>
+                      <Button variant="secondary" size="sm" onClick={() => speak(result.solution)} className="h-8 gap-2">
+                        <Volume2 className="h-4 w-4" /> Listen
+                      </Button>
+                    </div>
+                    <div className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
+                      {result.solution}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 bg-chart-5/5 p-5 rounded-xl border border-chart-5/20 shadow-sm">
+                    <h4 className="font-bold text-foreground flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-chart-5" /> Prevention & Causes
+                    </h4>
+                    <div className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
+                      {result.prevention}
+                    </div>
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="h-64 flex flex-col items-center justify-center text-center space-y-3">
-                <ImageIcon className="h-12 w-12 text-muted-foreground/30" />
-                <p className="text-muted-foreground px-8">Your analysis report will appear here once the scan is complete.</p>
+              <div className="h-80 flex flex-col items-center justify-center text-center space-y-4">
+                <div className="p-6 rounded-full bg-muted/50 border border-muted ring-8 ring-muted/20">
+                  <ImageIcon className="h-12 w-12 text-muted-foreground" />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-lg font-medium text-foreground">Waiting for Scan</p>
+                  <p className="text-sm text-muted-foreground px-12">Submit an image of your plant leaf to generate a comprehensive health report here.</p>
+                </div>
               </div>
             )}
           </CardContent>
@@ -179,4 +255,8 @@ export default function DiseaseDetectionPage() {
       </div>
     </div>
   )
+}
+
+function cn(...classes: any[]) {
+  return classes.filter(Boolean).join(' ')
 }

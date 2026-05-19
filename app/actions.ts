@@ -8,6 +8,7 @@ import { Role } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { fetchWeatherData, getWeatherConditionText } from "@/lib/api/weather";
 import { fetchMandiPrices } from "@/lib/api/market-prices";
+import { sendWelcomeEmail, sendApprovalEmail } from "@/lib/email";
 
 // ============================================
 // ADMIN & FARMERS (USERS) ACTIONS
@@ -24,7 +25,8 @@ export async function getFarmers() {
                 state: true,
                 image: true,
                 cropDetails: true,
-                // mustChangePassword: true,
+                isApproved: true,
+                mustChangePassword: true,
             },
             orderBy: { id: "desc" }
         });
@@ -32,11 +34,16 @@ export async function getFarmers() {
         // Transform to match Admin table format
         return farmers.map((f: any) => ({
             id: f.id,
-            name: f.name || f.email || "Unknown",
-            email: f.email || "No email provided",
-            location: f.state || f.image || "Unknown",
-            crops: f.cropDetails || "General Farming",
-            status: "active",
+            name: f.name || "Unknown",
+            email: f.email || "No email",
+            state: f.state || "N/A",
+            region: f.region || "N/A",
+            landSize: f.landSize || "N/A",
+            cropDetails: f.cropDetails || "N/A",
+            latitude: f.latitude,
+            longitude: f.longitude,
+            isApproved: f.isApproved,
+            mustChangePassword: f.mustChangePassword,
             joinDate: "Recently"
         }));
     } catch (error: any) {
@@ -58,22 +65,37 @@ export async function deleteFarmer(id: string) {
     }
 }
 
-export async function createFarmerAdmin(data: { name: string, email: string, phone: string, state: string, crops: string }) {
+export async function createFarmerAdmin(data: { 
+    name: string, 
+    email?: string, 
+    phone: string, 
+    state: string, 
+    region: string,
+    landSize: string,
+    cropDetails?: string,
+    latitude?: number,
+    longitude?: number
+}) {
     const session = await getServerSession(authOptions);
     if ((session?.user as any)?.role !== "ADMIN") throw new Error("Unauthorized");
 
     try {
-        const hashedPassword = await bcrypt.hash("Welcome@123", 12); // Expected default password
+        const hashedPassword = await bcrypt.hash("welcome@123", 12);
         await prisma.user.create({
             data: {
                 name: data.name,
                 email: data.email || null,
                 phone: data.phone,
-                image: data.state, // Map 'location' to image for now
-                cropDetails: data.crops,
+                state: data.state,
+                region: data.region,
+                landSize: data.landSize,
+                cropDetails: data.cropDetails || null,
+                latitude: data.latitude || null,
+                longitude: data.longitude || null,
                 password: hashedPassword,
                 role: "USER",
-                // mustChangePassword: true
+                isApproved: true,
+                mustChangePassword: true
             }
         });
         revalidatePath("/admin");
@@ -83,7 +105,18 @@ export async function createFarmerAdmin(data: { name: string, email: string, pho
     }
 }
 
-export async function updateFarmerAdmin(id: string, data: { name: string, email: string, phone: string, state: string, crops: string, status: string }) {
+export async function updateFarmerAdmin(id: string, data: { 
+    name: string, 
+    email?: string, 
+    phone: string, 
+    state: string, 
+    region: string,
+    landSize: string,
+    cropDetails?: string,
+    latitude?: number,
+    longitude?: number,
+    isApproved: boolean
+}) {
     const session = await getServerSession(authOptions);
     if ((session?.user as any)?.role !== "ADMIN") throw new Error("Unauthorized");
 
@@ -94,9 +127,13 @@ export async function updateFarmerAdmin(id: string, data: { name: string, email:
                 name: data.name,
                 email: data.email || null,
                 phone: data.phone,
-                image: data.state,
-                cropDetails: data.crops,
-                // Additional status mapping logic can be handled here later
+                state: data.state,
+                region: data.region,
+                landSize: data.landSize,
+                cropDetails: data.cropDetails || null,
+                latitude: data.latitude || null,
+                longitude: data.longitude || null,
+                isApproved: data.isApproved
             }
         });
         revalidatePath("/admin");
@@ -125,55 +162,6 @@ export async function handleInitialPasswordReset(password: string) {
     }
 }
 
-export async function bulkImportFarmers(data: any[][]) {
-    try {
-        const session = await getServerSession(authOptions);
-        if ((session?.user as any)?.role !== "ADMIN") return { error: "Unauthorized: Admin access required" };
-
-        if (!data || data.length < 2) return { error: "No data found in file." };
-
-        const rows = [...data];
-        const headers = rows.shift();
-        
-        if (!headers || !headers[0]?.toString().toLowerCase().includes('name')) {
-            return { error: "Invalid file format. Header 'name' not found in first column." };
-        }
-
-        const hashedPassword = await bcrypt.hash("Welcome@123", 12);
-        const usersToCreate = [];
-
-        for (const row of rows) {
-            if (row.length >= 2) { 
-                const [name, phone, email, state, crops] = row.map(cell => cell?.toString().trim());
-                if (!name || (!phone && !email)) continue;
-                
-                usersToCreate.push({
-                    name,
-                    phone: phone || null,
-                    email: email || null,
-                    image: state || null,
-                    cropDetails: crops || null,
-                    password: hashedPassword,
-                    role: "USER" as Role
-                });
-            }
-        }
-
-        if (usersToCreate.length === 0) return { error: "No valid farmer records found in the file." };
-
-        // PostgreSql/Prisma createMany is very fast
-        const result = await prisma.user.createMany({
-            data: usersToCreate,
-            skipDuplicates: true
-        });
-
-        revalidatePath("/admin");
-        return { success: true, count: result.count };
-    } catch (error: any) {
-        console.error("Farmers Import Critical Error:", error);
-        return { error: `Farmers Import error: ${error.message || "Please check your file format."}` };
-    }
-}
 
 export async function updateProfile(data: { name?: string, phone?: string, state?: string, region?: string, landSize?: string, cropDetails?: string }) {
     const session = await getServerSession(authOptions);
@@ -495,139 +483,464 @@ export async function getMarketPrices(limit = 100) {
 }
 
 // ============================================
-// AI CHATBOT ACTIONS
+// AI ACTIONS (GROQ BACKEND)
 // ============================================
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
+import Groq from "groq-sdk";
 
 export async function getChatResponse(message: string, history: { role: "user" | "model", parts: { text: string }[] }[]) {
     try {
-        const apiKey = process.env.GEMINI_API_KEY;
+        const apiKey = process.env.GROQ_API_KEY;
 
-        if (!apiKey) {
+        if (!apiKey || apiKey === "your_groq_api_key_here") {
             return { 
-                error: "Chatbot is in offline mode (API Key missing). Please contact the administrator.",
-                content: "I'm currently in offline mode. Once my API key is configured, I'll be able to help you better with farming queries!" 
+                error: "Chatbot is in offline mode (Groq API Key missing). Please add your key to the .env file.",
+                content: "I'm currently in offline mode. Once my Groq API key is configured, I'll be able to help you better with Llama-powered farming advice!" 
             };
         }
 
-        const genAI = new GoogleGenerativeAI(apiKey);
+        const groq = new Groq({ apiKey });
         
-        // Define tools for function calling
+        // Map history to Groq format
+        const messages: any[] = history.map(h => ({
+            role: h.role === "model" ? "assistant" : "user",
+            content: h.parts[0].text
+        }));
+
+        // Add the new message
+        messages.push({ role: "user", content: message });
+
         const tools = [
             {
-                functionDeclarations: [
-                    {
-                        name: "get_weather",
-                        description: "Get real-time weather information for a specific location (defaults to Chennai, Tamil Nadu).",
-                        parameters: {
-                            type: "object",
-                            properties: {
-                                location: { type: "string", description: "The city/location name." }
-                            }
+                type: "function",
+                function: {
+                    name: "get_weather",
+                    description: "Get real-time weather information for a specific location.",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            location: { type: "string", description: "The city/location name." }
                         }
-                    },
-                    {
-                        name: "get_market_prices",
-                        description: "Get current mandi prices for agricultural commodities.",
-                        parameters: {
-                            type: "object",
-                            properties: {
-                                commodity: { type: "string", description: "The crop/commodity name (e.g., Rice, Wheat)." },
-                                state: { type: "string", description: "The state name (e.g., Tamil Nadu, Punjab)." }
-                            }
-                        }
-                    },
-                    {
-                        name: "get_government_schemes",
-                        description: "Get all available government farming schemes from the Agro Puthalvan platform.",
-                        parameters: { type: "object", properties: {} }
                     }
-                ]
+                }
+            },
+            {
+                type: "function",
+                function: {
+                    name: "get_market_prices",
+                    description: "Get current mandi prices for agricultural commodities.",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            commodity: { type: "string", description: "The crop/commodity name." },
+                            state: { type: "string", description: "The state name." }
+                        }
+                    }
+                }
+            },
+            {
+                type: "function",
+                function: {
+                    name: "get_government_schemes",
+                    description: "Get all available government farming schemes.",
+                    parameters: { type: "object", properties: {} }
+                }
+            },
+            {
+                type: "function",
+                function: {
+                    name: "predict_best_crop",
+                    description: "Predict the most suitable crop based on soil and weather parameters using the AI model.",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            N: { type: "number", description: "Nitrogen content in soil" },
+                            P: { type: "number", description: "Phosphorous content in soil" },
+                            K: { type: "number", description: "Potassium content in soil" },
+                            pH: { type: "number", description: "Soil pH value" },
+                            rainfall: { type: "number", description: "Rainfall in mm" },
+                            temperature: { type: "number", description: "Temperature in Celsius" }
+                        },
+                        required: ["N", "P", "K", "pH", "rainfall", "temperature"]
+                    }
+                }
+            },
+            {
+                type: "function",
+                function: {
+                    name: "get_platform_stats",
+                    description: "Get current statistics about the Agro Puthalvan platform like total farmers, states covered, etc.",
+                    parameters: { type: "object", properties: {} }
+                }
             }
         ];
 
-        const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.5-flash",
-            tools: tools as any,
-            systemInstruction: `You are the Agro Assistant, a specialized AI for the 'Agro Puthalvan' platform. 
-            Agro Puthalvan is a comprehensive agricultural empowerment portal for farmers.
-            
-            Your Expertise:
-            1. Government Schemes: Guide users on PM-KISAN, PMFBY, KCC, and other state/central schemes. Use 'get_government_schemes' to see what we offer.
-            2. Crop Management: Provide advice on sowing, fertilizers (NPK ratios), and irrigation.
-            3. Disease Detection: Direct users to our 'Disease Detection' section for image-based analysis.
-            4. Market Prices: Use 'get_market_prices' to give real data on price trends.
-            5. Weather: Use 'get_weather' to provide real-time updates for Chennai or other locations.
-            6. Platform Navigation: Help users find sections like Crop Recommendation, Community Forum, and Weather.
-
-            Tone: Professional, helpful, empathetic to farmers' needs, and encouraging.
-            Response Style: Keep answers concise and actionable. Use bullet points for steps. Most users will be interacting via voice, so keep sentences simple.
-            Languages: You must respond in the language the user is speaking or has selected (English, Tamil, or Hindi). If the user asks in Tamil, reply in Tamil. If Hindi, reply in Hindi.
-
-            IMPORTANT: When a user asks about weather, market prices, or schemes, ALWAYS use the provided tools to get real data instead of saying you don't know.`
-        });
-
-        const firstUserIndex = history.findIndex(m => m.role === "user");
-        const validHistory = firstUserIndex !== -1 ? history.slice(firstUserIndex) : [];
-
-        const chat = model.startChat({
-            history: validHistory,
-        });
-
-        let result = await chat.sendMessage(message);
-        let response = await result.response;
-
-        // Handle possible function calls
-        const calls = response.candidates?.[0]?.content?.parts?.filter(p => p.functionCall);
+        const systemInstruction = `You are the Agro Assistant, a specialized AI for the 'Agro Puthalvan' platform. 
+        Agro Puthalvan is a comprehensive agricultural empowerment portal for farmers.
         
-        if (calls && calls.length > 0) {
-            const toolResponses: any[] = [];
+        Your Expertise:
+        1. Government Schemes: Guide users on PM-KISAN, PMFBY, KCC, etc.
+        2. Crop Management: Provide advice on sowing, fertilizers (NPK ratios), and irrigation.
+        3. Disease Detection: Direct users to our 'Disease Detection' section for image-based analysis.
+        4. Market Prices: Use your tools to fetch real data on price trends.
+        5. Weather: Use your tools to fetch real-time updates.
+        6. Crop Prediction: Suggest crops based on soil NPK, pH, and weather.
+        7. Platform Stats: Fetch platform usage or statistics.
+        8. Platform Navigation: Help users find sections like Crop Recommendation, Community Forum, and Weather.
+
+        Tone: Professional, helpful, empathetic, and encouraging.
+        Response Style: Concise and actionable. Use bullet points. Keep sentences simple for voice interaction.
+        Languages: Respond in the language the user is speaking (English, Tamil, or Hindi).`;
+
+        let chatCompletion = await groq.chat.completions.create({
+            messages: [{ role: "system", content: systemInstruction }, ...messages],
+            model: "llama-3.1-8b-instant",
+            tools: tools as any,
+            tool_choice: "auto",
+        });
+
+        let responseMessage = chatCompletion.choices[0].message;
+
+        if (responseMessage.tool_calls) {
+            messages.push(responseMessage);
             
-            for (const call of calls) {
-                const { name, args } = call.functionCall!;
-                console.log(`AI calling tool: ${name}`, args);
-                
-                if (name === "get_weather") {
-                    // Chennai default coords
+            for (const toolCall of responseMessage.tool_calls) {
+                const functionName = toolCall.function.name;
+                const functionArgs = JSON.parse(toolCall.function.arguments);
+                let functionResponse = "";
+
+                if (functionName === "get_weather") {
                     const weather = await fetchWeatherData(); 
                     if (weather) {
                         const condition = getWeatherConditionText(weather.current.conditionCode);
-                        toolResponses.push({
-                            role: "function",
-                            name: name,
-                            content: `Current Weather in Chennai: ${weather.current.temperature}°C, ${condition}. Humidity: ${weather.current.humidity}%, Wind: ${weather.current.windSpeed} km/h.`
-                        });
+                        functionResponse = `Current Weather in Chennai: ${weather.current.temperature}°C, ${condition}. Humidity: ${weather.current.humidity}%, Wind: ${weather.current.windSpeed} km/h.`;
                     } else {
-                        toolResponses.push({ role: "function", name: name, content: "Unable to fetch weather data at the moment." });
+                        functionResponse = "Unable to fetch weather data.";
                     }
-                } else if (name === "get_market_prices") {
-                    const prices = await fetchMandiPrices(5, 0, { commodity: (args as any).commodity, state: (args as any).state });
-                    toolResponses.push({
-                        role: "function",
-                        name: name,
-                        content: prices.length > 0 ? JSON.stringify(prices.slice(0, 3)) : "No market data found for this commodity."
-                    });
-                } else if (name === "get_government_schemes") {
+                } else if (functionName === "get_market_prices") {
+                    const prices = await fetchMandiPrices(5, 0, { commodity: functionArgs.commodity, state: functionArgs.state });
+                    functionResponse = prices.length > 0 ? JSON.stringify(prices.slice(0, 3)) : "No market data found.";
+                } else if (functionName === "get_government_schemes") {
                     const schemes = await prisma.scheme.findMany({ take: 5 });
-                    toolResponses.push({
-                        role: "function",
-                        name: name,
-                        content: JSON.stringify(schemes.map(s => s.title))
-                    });
+                    functionResponse = JSON.stringify(schemes.map(s => s.title));
+                } else if (functionName === "get_platform_stats") {
+                    const stats = await getLandingStats();
+                    functionResponse = `We have ${stats.farmers} farmers across ${stats.states} states. We support ${stats.varieties} crop varieties with ${stats.accuracy} accuracy.`;
+                } else if (functionName === "predict_best_crop") {
+                    try {
+                        const mlApiUrl = process.env.LOCAL_ML_API_URL || "http://127.0.0.1:5000";
+                        const res = await fetch(`${mlApiUrl}/api/predict-crop`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(functionArgs)
+                        });
+                        const data = await res.json();
+                        functionResponse = data.success ? `The AI model highly recommends growing: ${data.crop}` : "Failed to predict crop with the provided data.";
+                    } catch (e) {
+                        functionResponse = "Error connecting to the ML prediction API.";
+                    }
                 }
+
+                messages.push({
+                    tool_call_id: toolCall.id,
+                    role: "tool",
+                    name: functionName,
+                    content: functionResponse,
+                });
             }
 
-            // Send tool responses back to model to get final answer
-            // Using the simpler approach: just include the data in a follow-up or re-prompt
-            const followUp = await chat.sendMessage(toolResponses.map(r => r.content).join("\n"));
-            return { content: followUp.response.text() };
+            const secondResponse = await groq.chat.completions.create({
+                model: "llama-3.1-8b-instant",
+                messages: [{ role: "system", content: systemInstruction }, ...messages],
+            });
+            return { content: secondResponse.choices[0].message.content };
         }
 
-        return { content: response.text() };
+        return { content: responseMessage.content || "" };
     } catch (error: any) {
-        console.error("Gemini Chat Error:", error);
-        return { error: "Failed to connect to Agro Assistant. Please ensure your internet is active and try again." };
+        console.error("Groq Chat Error:", error);
+        return { error: "Failed to connect to Agro Assistant via Groq. Please check your API key and connection." };
+    }
+}
+
+export async function detectDiseaseAction(base64Image: string, language: string = "English") {
+    try {
+        const groqApiKey = process.env.GROQ_API_KEY;
+        const mlApiUrl = process.env.LOCAL_ML_API_URL || "http://127.0.0.1:5000";
+
+        if (!groqApiKey || groqApiKey === "your_groq_api_key_here") {
+            return { error: "AI Scanner is in offline mode (Groq API Key missing)." };
+        }
+
+        const groq = new Groq({ apiKey: groqApiKey });
+
+        // ============================================
+        // PHASE 1: LEAF VALIDATION (GROQ VISION)
+        // ============================================
+        const validationPrompt = `
+            Analyze this image. 
+            Is this a plant leaf? 
+            Respond strictly in valid JSON format:
+            {
+              "isLeaf": true | false
+            }
+        `;
+
+        const validationResponse = await groq.chat.completions.create({
+            model: "meta-llama/llama-4-scout-17b-16e-instruct",
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        { type: "text", text: validationPrompt },
+                        { type: "image_url", image_url: { url: base64Image } }
+                    ],
+                },
+            ],
+            response_format: { type: "json_object" },
+            max_tokens: 100,
+        });
+
+        const validationData = JSON.parse(validationResponse.choices[0].message.content || "{}");
+        
+        if (!validationData.isLeaf) {
+            return { error: "No leaf detected. This tool is specifically for plant leaf disease analysis." };
+        }
+
+        // ============================================
+        // PHASE 2: DISEASE DETECTION (LOCAL ML API)
+        // ============================================
+        let detectedDisease = "";
+        try {
+            // Convert base64 to Blob/File for Flask API
+            const base64Data = base64Image.split(",")[1];
+            const byteCharacters = atob(base64Data);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: "image/jpeg" });
+            
+            const formData = new FormData();
+            formData.append("image", blob, "leaf.jpg");
+
+            const mlResponse = await fetch(`${mlApiUrl}/api/predict-disease`, {
+                method: "POST",
+                body: formData
+            });
+
+            if (!mlResponse.ok) throw new Error("Local ML API failed");
+            
+            const mlData = await mlResponse.json();
+            if (!mlData.success) throw new Error(mlData.error || "Detection failed");
+            
+            detectedDisease = mlData.disease;
+        } catch (mlErr) {
+            console.error("Local ML API Error:", mlErr);
+            return { error: "Failed to detect disease name using the local model. Ensure the ML service is running." };
+        }
+
+        if (detectedDisease.toLowerCase().includes("healthy")) {
+            return {
+                success: true,
+                disease: detectedDisease,
+                solution: "No disease detected. Continue regular maintenance.",
+                prevention: "Proper irrigation and soil nutrition."
+            };
+        }
+
+        // ============================================
+        // PHASE 3: ADVICE GENERATION (GROQ LLM)
+        // ============================================
+        const advicePrompt = `
+            The plant has been diagnosed with: ${detectedDisease}.
+            Provide a highly detailed and comprehensive agricultural report in JSON format including:
+            1. Solution: Extensive, step-by-step remedies to overcome this specific disease. Include chemical treatments (with dosages if applicable), organic/natural remedies, and immediate actions to take.
+            2. Prevention: In-depth causes of the disease, environmental factors, and long-term preventive measures to avoid recurrence.
+            
+            Respond strictly in valid JSON where BOTH values are single flat strings:
+            {
+              "solution": "Single detailed string with all remedies combined...",
+              "prevention": "Single detailed string with all prevention steps combined..."
+            }
+            CRITICAL: You must provide all text translated accurately into ${language}. Do not use nested objects.
+        `;
+
+        const adviceResponse = await groq.chat.completions.create({
+            model: "llama-3.3-70b-versatile",
+            messages: [{ role: "user", content: advicePrompt }],
+            response_format: { type: "json_object" },
+            max_tokens: 1024,
+        });
+
+        const adviceData = JSON.parse(adviceResponse.choices[0].message.content || "{}");
+
+        // Safeguard to ensure React doesn't crash if the AI still returns an object
+        const formatString = (val: any) => {
+            if (typeof val === 'string') return val;
+            if (typeof val === 'object' && val !== null) {
+                return Object.entries(val).map(([k, v]) => `${k.charAt(0).toUpperCase() + k.slice(1)}:\n${v}`).join('\n\n');
+            }
+            return String(val || "Data unavailable");
+        };
+
+        return {
+            success: true,
+            disease: detectedDisease,
+            solution: formatString(adviceData.solution),
+            prevention: formatString(adviceData.prevention)
+        };
+
+    } catch (error: any) {
+        console.error("Hybrid Disease Detection Error:", error);
+        return { error: "Failed to process hybrid disease analysis. Ensure stable connection and clear image." };
+    }
+}
+
+// ============================================
+// ADMIN MANAGEMENT ACTIONS
+// ============================================
+
+/**
+ * Approve or Reject a Farmer registration
+ */
+export async function toggleFarmerApproval(userId: string, status: boolean) {
+    try {
+        const session = await getServerSession(authOptions);
+        if (session?.user?.role !== "ADMIN") throw new Error("Unauthorized");
+
+        const user = await prisma.user.update({
+            where: { id: userId },
+            data: { isApproved: status },
+            select: { email: true, name: true, isApproved: true }
+        });
+
+        if (status && user.email) {
+            await sendApprovalEmail(user.email, user.name || "Farmer");
+        }
+
+        revalidatePath("/admin");
+        return { success: true, isApproved: user.isApproved };
+    } catch (err: any) {
+        return { error: err.message };
+    }
+}
+
+/**
+ * Admin creates a new User or Agri Officer
+ */
+export async function createStaffUser(data: { name: string; email: string; role: "USER" | "OFFICER" | "ADMIN" }) {
+    try {
+        const session = await getServerSession(authOptions);
+        if (session?.user?.role !== "ADMIN") throw new Error("Unauthorized");
+
+        const defaultPassword = "welcome@123";
+        const hashedPassword = await bcrypt.hash(defaultPassword, 12);
+
+        const newUser = await prisma.user.create({
+            data: {
+                name: data.name,
+                email: data.email,
+                role: data.role,
+                password: hashedPassword,
+                isApproved: true, // Admin created users are auto-approved
+                mustChangePassword: true,
+            }
+        });
+
+        await sendWelcomeEmail(data.email, data.name, data.role, defaultPassword);
+
+        revalidatePath("/admin");
+        return { success: true, user: newUser };
+    } catch (err: any) {
+        if (err.code === "P2002") return { error: "Email already exists" };
+        return { error: err.message };
+    }
+}
+
+/**
+ * User changes their password (primarily for first-time login)
+ */
+export async function updateInitialPassword(newPassword: string) {
+    try {
+        const session = await getServerSession(authOptions);
+        if (!session?.user?.id) throw new Error("Not authenticated");
+
+        const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+        await prisma.user.update({
+            where: { id: session.user.id },
+            data: {
+                password: hashedPassword,
+                mustChangePassword: false
+            }
+        });
+
+        return { success: true };
+    } catch (err: any) {
+        return { error: err.message };
+    }
+}
+
+/**
+ * Bulk import farmers from CSV/Excel data
+ */
+export async function bulkImportFarmers(data: any[][]) {
+    try {
+        const session = await getServerSession(authOptions);
+        if (session?.user?.role !== "ADMIN") throw new Error("Unauthorized");
+
+        // Skip header row if it exists
+        const rows = data.slice(1);
+        let count = 0;
+
+        const defaultPassword = "welcome@123";
+        const hashedPassword = await bcrypt.hash(defaultPassword, 12);
+
+        for (const row of rows) {
+            if (!row[0] || !row[1]) continue; // Skip if name or phone missing
+
+            const phoneStr = String(row[1]);
+            const existingUser = await prisma.user.findFirst({
+                where: { phone: phoneStr }
+            });
+
+            if (existingUser) {
+                await prisma.user.update({
+                    where: { id: existingUser.id },
+                    data: {
+                        name: String(row[0]),
+                        email: row[2] ? String(row[2]) : null,
+                        state: row[3] ? String(row[3]) : null,
+                        region: row[4] ? String(row[4]) : null,
+                        landSize: row[5] ? String(row[5]) : null,
+                        cropDetails: row[6] ? String(row[6]) : null,
+                    }
+                });
+            } else {
+                await prisma.user.create({
+                    data: {
+                        name: String(row[0]),
+                        phone: phoneStr,
+                        email: row[2] ? String(row[2]) : null,
+                        state: row[3] ? String(row[3]) : null,
+                        region: row[4] ? String(row[4]) : null,
+                        landSize: row[5] ? String(row[5]) : null,
+                        cropDetails: row[6] ? String(row[6]) : null,
+                        password: hashedPassword,
+                        role: "USER",
+                        isApproved: true,
+                        mustChangePassword: true
+                    }
+                });
+            }
+            count++;
+        }
+
+        revalidatePath("/admin");
+        return { success: true, count };
+    } catch (err: any) {
+        return { error: err.message };
     }
 }

@@ -9,44 +9,67 @@ import bcrypt from "bcryptjs";
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
 
-// Initialize a global Prisma Client to avoid exhausting database connections in development
+// Initialize a global Prisma Client
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 export const prisma = globalForPrisma.prisma || new PrismaClient({ adapter });
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
-// Re-triggering Prism Client HMR sync for schema updates
 
 export const authOptions: NextAuthOptions = {
-    adapter: PrismaAdapter(prisma) as any, // Cast for NextAuth v4 compatibility with @auth/prisma-adapter
+    adapter: PrismaAdapter(prisma) as any,
     session: {
         strategy: "jwt",
     },
     pages: {
         signIn: "/login",
-        newUser: "/register", // Redirect specifically if they just registered
+        newUser: "/register",
     },
     providers: [
         CredentialsProvider({
             name: "credentials",
             credentials: {
                 email: { label: "Email", type: "email" },
-                password: { label: "Password", type: "password" }
+                password: { label: "Password", type: "password" },
+                loginRole: { label: "Role", type: "text" }
             },
             async authorize(credentials) {
+                console.log("Authorize attempt:", credentials?.email, credentials?.loginRole);
+                
                 if (!credentials?.email || !credentials?.password) {
                     throw new Error("Invalid credentials");
                 }
 
+                const loginId = credentials.email.toString();
+
                 const user = await prisma.user.findFirst({
                     where: {
                         OR: [
-                            { email: credentials.email },
-                            { phone: credentials.email }
+                            { email: loginId },
+                            { phone: loginId }
                         ]
                     }
                 });
+                
+                console.log("User found:", user ? user.email : "none");
 
                 if (!user || !user?.password) {
                     throw new Error("Invalid credentials");
+                }
+
+                // Role matching Enforcement
+                const requestedRoleMap: Record<string, string> = {
+                    "Admin": "ADMIN",
+                    "Farmer": "USER",
+                    "Agri Officer": "OFFICER"
+                };
+                const expectedRole = requestedRoleMap[credentials.loginRole || "Farmer"];
+                
+                if (user.role !== expectedRole) {
+                    throw new Error(`Invalid role access. This account is registered as ${user.role}.`);
+                }
+
+                // Check for Admin Approval if it's a Farmer (USER role)
+                if (user.role === "USER" && !user.isApproved) {
+                    throw new Error("Your account is pending approval by the admin.");
                 }
 
                 const isCorrectPassword = await bcrypt.compare(
@@ -69,7 +92,8 @@ export const authOptions: NextAuthOptions = {
                     longitude: user.longitude,
                     landSize: user.landSize,
                     cropDetails: user.cropDetails,
-                    // mustChangePassword: user.mustChangePassword,
+                    isApproved: user.isApproved,
+                    mustChangePassword: user.mustChangePassword,
                 };
             }
         })
@@ -86,7 +110,8 @@ export const authOptions: NextAuthOptions = {
                 (session.user as any).longitude = token.longitude;
                 (session.user as any).landSize = token.landSize;
                 (session.user as any).cropDetails = token.cropDetails;
-                // (session.user as any).mustChangePassword = token.mustChangePassword;
+                (session.user as any).isApproved = token.isApproved;
+                (session.user as any).mustChangePassword = token.mustChangePassword;
             }
             return session;
         },
@@ -100,7 +125,8 @@ export const authOptions: NextAuthOptions = {
                 token.longitude = (user as any).longitude;
                 token.landSize = (user as any).landSize;
                 token.cropDetails = (user as any).cropDetails;
-                // token.mustChangePassword = (user as any).mustChangePassword;
+                token.isApproved = (user as any).isApproved;
+                token.mustChangePassword = (user as any).mustChangePassword;
             }
             return token;
         }

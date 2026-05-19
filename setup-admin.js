@@ -1,30 +1,37 @@
-const { PrismaClient } = require('@prisma/client')
-const bcrypt = require('bcryptjs')
+const { PrismaClient } = require('@prisma/client');
+const bcrypt = require('bcryptjs');
+require('dotenv').config();
 
-const prisma = new PrismaClient()
+const prisma = new PrismaClient();
 
 async function main() {
-    try {
-        const admin = await prisma.user.findFirst({ where: { role: 'ADMIN' } })
-        if (admin) {
-            console.log("ADMIN_EXISTS:" + admin.email)
-        } else {
-            const hashedPassword = await bcrypt.hash("admin123", 10)
-            const newAdmin = await prisma.user.create({
-                data: {
-                    name: "System Admin",
-                    email: "admin@agro.com",
-                    password: hashedPassword,
-                    role: "ADMIN"
-                }
-            })
-            console.log("CREATED_ADMIN:" + newAdmin.email)
-        }
-    } catch (e) {
-        console.error(e)
-    } finally {
-        await prisma.$disconnect()
+  const hashedPassword = await bcrypt.hash("admin@123", 12);
+  
+  const user = await prisma.user.upsert({
+    where: { email: "admin@agro.com" },
+    update: {
+        password: hashedPassword,
+        role: "ADMIN",
+        isApproved: true
+    },
+    create: {
+      email: "admin@agro.com",
+      name: "Admin User",
+      password: hashedPassword,
+      role: "ADMIN",
+      isApproved: true,
+      mustChangePassword: false
     }
+  });
+  
+  console.log('Admin account created/updated:', user.email);
 }
 
 main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

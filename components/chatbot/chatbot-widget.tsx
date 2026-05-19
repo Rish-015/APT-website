@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback } from "react"
-import { Bot, X, Send, Minimize2, Loader2, Mic, Volume2, VolumeX, Languages } from "lucide-react"
+import { Bot, X, Send, Minimize2, Loader2, Mic, Volume2, VolumeX, Languages, Pause, Play, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -77,6 +77,8 @@ export function ChatbotWidget() {
   // Voice State
   const [isListening, setIsListening] = useState(false)
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(true)
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [isPaused, setIsPaused] = useState(false)
   
   const scrollRef = useRef<HTMLDivElement>(null)
   const recognitionRef = useRef<any>(null)
@@ -142,8 +144,35 @@ export function ChatbotWidget() {
     const voices = window.speechSynthesis.getVoices()
     const preferredVoice = voices.find(v => v.lang.startsWith(selectedLanguage.split('-')[0]))
     if (preferredVoice) utterance.voice = preferredVoice
+
+    utterance.onstart = () => { setIsSpeaking(true); setIsPaused(false); }
+    utterance.onend = () => { setIsSpeaking(false); setIsPaused(false); }
+    utterance.onpause = () => setIsPaused(true)
+    utterance.onresume = () => setIsPaused(false)
+    utterance.onerror = () => { setIsSpeaking(false); setIsPaused(false); }
+
     window.speechSynthesis.speak(utterance)
   }, [isVoiceEnabled, selectedLanguage])
+
+  const togglePlayback = () => {
+    if (isPaused) {
+      window.speechSynthesis.resume()
+    } else {
+      window.speechSynthesis.pause()
+    }
+  }
+
+  const stopPlayback = () => {
+    window.speechSynthesis.cancel()
+    setIsSpeaking(false)
+    setIsPaused(false)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (typeof window !== "undefined") window.speechSynthesis.cancel()
+    }
+  }, [])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -259,11 +288,37 @@ export function ChatbotWidget() {
                 </DropdownMenuContent>
               </DropdownMenu>
 
+              {isSpeaking && (
+                <>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-7 w-7 text-primary-foreground hover:bg-primary-foreground/20"
+                    onClick={togglePlayback}
+                    title={isPaused ? "Resume voice" : "Pause voice"}
+                  >
+                    {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-7 w-7 text-primary-foreground hover:bg-primary-foreground/20"
+                    onClick={stopPlayback}
+                    title="Stop voice"
+                  >
+                    <Square className="h-4 w-4 fill-current" />
+                  </Button>
+                </>
+              )}
               <Button 
                 variant="ghost" 
                 size="icon" 
                 className="h-7 w-7 text-primary-foreground hover:bg-primary-foreground/20"
-                onClick={() => setIsVoiceEnabled(!isVoiceEnabled)}
+                onClick={() => {
+                  if (isVoiceEnabled) stopPlayback()
+                  setIsVoiceEnabled(!isVoiceEnabled)
+                }}
+                title={isVoiceEnabled ? "Disable voice" : "Enable voice"}
               >
                 {isVoiceEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
               </Button>
