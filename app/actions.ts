@@ -680,10 +680,7 @@ export async function detectDiseaseAction(base64Image: string, language: string 
         const validationPrompt = `
             Analyze this image. 
             Is this a plant leaf? 
-            Respond strictly in valid JSON format:
-            {
-              "isLeaf": true | false
-            }
+            Respond with only "yes" or "no".
         `;
 
         const validationResponse = await groq.chat.completions.create({
@@ -697,13 +694,12 @@ export async function detectDiseaseAction(base64Image: string, language: string 
                     ],
                 },
             ],
-            response_format: { type: "json_object" },
-            max_tokens: 100,
+            max_tokens: 10,
         });
 
-        const validationData = JSON.parse(validationResponse.choices[0].message.content || "{}");
+        const validationText = validationResponse.choices[0].message.content?.trim().toLowerCase() || "";
         
-        if (!validationData.isLeaf) {
+        if (!validationText.includes("yes")) {
             return { error: "No leaf detected. This tool is specifically for plant leaf disease analysis." };
         }
 
