@@ -663,8 +663,10 @@ export async function getChatResponse(message: string, history: { role: "user" |
     }
 }
 
-export async function detectDiseaseAction(base64Image: string, language: string = "English") {
+export async function detectDiseaseAction(formData: FormData) {
     try {
+        const base64Image = formData.get("base64Image") as string;
+        const language = (formData.get("language") as string) || "English";
         const groqApiKey = process.env.GROQ_API_KEY;
         const mlApiUrl = process.env.LOCAL_ML_API_URL || "http://127.0.0.1:5000";
 
@@ -694,7 +696,8 @@ export async function detectDiseaseAction(base64Image: string, language: string 
                     ],
                 },
             ],
-            max_tokens: 10,
+            max_tokens: 1024,
+            ...({ reasoning_format: "hidden" } as any),
         });
 
         const validationText = validationResponse.choices[0].message.content?.trim().toLowerCase() || "";

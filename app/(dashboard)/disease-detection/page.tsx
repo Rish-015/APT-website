@@ -84,7 +84,10 @@ export default function DiseaseDetectionPage() {
       const base64Image = await base64Promise
 
       const language = getCurrentLanguage()
-      const response = await detectDiseaseAction(base64Image, language)
+      const formData = new FormData()
+      formData.append("base64Image", base64Image)
+      formData.append("language", language)
+      const response = await detectDiseaseAction(formData)
 
       if (response.success && response.disease) {
         setResult({
