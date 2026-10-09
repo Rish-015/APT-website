@@ -212,21 +212,15 @@ export default function LoginPage() {
             ) : (
               <form onSubmit={handlePasswordLogin} className="space-y-6 pt-2 fade-in">
                 <div className="space-y-2">
-                  <Label className="text-xs font-bold text-slate-700">Mobile Number or Email</Label>
-                  <div className="flex gap-2">
-                    <div className="flex items-center justify-center gap-1 border border-slate-300 rounded-lg px-2 bg-white h-11 w-20 shrink-0 hover:bg-slate-50 cursor-pointer transition-colors">
-                      <span className="text-sm font-medium text-slate-700">+91</span>
-                      <ChevronDown className="h-4 w-4 text-slate-400" />
-                    </div>
-                    <Input
-                      id="loginIdentifier"
-                      name="loginIdentifier"
-                      type="text"
-                      placeholder="Enter mobile or email"
-                      className="h-11 rounded-lg text-sm bg-white"
-                      required
-                    />
-                  </div>
+                  <Label htmlFor="loginIdentifier" className="text-xs font-bold text-slate-700">Email Address</Label>
+                  <Input
+                    id="loginIdentifier"
+                    name="loginIdentifier"
+                    type="text"
+                    placeholder="Enter your email address"
+                    className="h-11 rounded-lg text-sm bg-white w-full"
+                    required
+                  />
                 </div>
 
                 <div className="space-y-2">

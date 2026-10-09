@@ -589,12 +589,17 @@ export async function getChatResponse(message: string, history: { role: "user" |
         8. Platform Navigation: Help users find sections like Crop Recommendation, Community Forum, and Weather.
 
         Tone: Professional, helpful, empathetic, and encouraging.
-        Response Style: Concise and actionable. Use bullet points. Keep sentences simple for voice interaction.
+        Response Style: Concise, clear, and easy to read.
+        Formatting Rules:
+        - Separate ideas and sections with clear paragraph breaks.
+        - When presenting lists, place each item on its own new line starting with a dash (- ). Never cluster multiple bullet items together on one line.
+        - Avoid excessive nested asterisks and markdown symbols.
+        - Keep language clear and natural for speech reading.
         Languages: Respond in the language the user is speaking (English, Tamil, or Hindi).`;
 
         let chatCompletion = await groq.chat.completions.create({
             messages: [{ role: "system", content: systemInstruction }, ...messages],
-            model: "llama-3.1-8b-instant",
+            model: "qwen/qwen3.8-27b",
             tools: tools as any,
             tool_choice: "auto",
         });
@@ -650,7 +655,7 @@ export async function getChatResponse(message: string, history: { role: "user" |
             }
 
             const secondResponse = await groq.chat.completions.create({
-                model: "llama-3.1-8b-instant",
+                model: "qwen/qwen3.8-27b",
                 messages: [{ role: "system", content: systemInstruction }, ...messages],
             });
             return { content: secondResponse.choices[0].message.content };
@@ -686,7 +691,7 @@ export async function detectDiseaseAction(formData: FormData) {
         `;
 
         const validationResponse = await groq.chat.completions.create({
-            model: "qwen/qwen3.6-27b",
+            model: "qwen/qwen3.8-27b",
             messages: [
                 {
                     role: "user",
@@ -767,7 +772,7 @@ export async function detectDiseaseAction(formData: FormData) {
         `;
 
         const adviceResponse = await groq.chat.completions.create({
-            model: "llama-3.3-70b-versatile",
+            model: "qwen/qwen3.8-27b",
             messages: [{ role: "user", content: advicePrompt }],
             response_format: { type: "json_object" },
             max_tokens: 1024,

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useCallback } from "react"
-import { Bot, X, Send, Minimize2, Loader2, Mic, Volume2, VolumeX, Languages, Pause, Play, Square } from "lucide-react"
+import { Bot, X, Send, Minimize2, Loader2, Mic, Volume2, VolumeX, Languages, Pause, Play, Square, RotateCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -65,6 +65,119 @@ const translations = {
   }
 }
 
+/**
+ * Detect language from Unicode character ranges
+ */
+function detectLanguage(text: string, fallback: Language): Language {
+  // Tamil range
+  if (/[\u0B80-\u0BFF]/.test(text)) {
+    return "ta-IN"
+  }
+  // Hindi / Devanagari range
+  if (/[\u0900-\u097F]/.test(text)) {
+    return "hi-IN"
+  }
+  return fallback
+}
+
+/**
+ * Clean text for SpeechSynthesis (remove markdown, asterisks, brackets, bullets)
+ */
+function cleanTextForSpeech(text: string): string {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/^[\*\-•]\s+/gm, '')
+    .replace(/[\*\_#`~\[\]]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Clean message renderer that strips asterisks and formats lists / bold lines
+ */
+function FormattedChatMessage({ content }: { content: string }) {
+  // Turn inline bullets (e.g. " * **PM-KISAN" or " - Point") into newlines
+  const normalized = content
+    .replace(/\s+\*\s+(\*\*|[^\*\s])/g, '\n- $1')
+    .replace(/\s+-\s+(\*\*|[^\-\s])/g, '\n- $1')
+    .replace(/\s+•\s+/g, '\n- ')
+
+  const rawLines = normalized.split('\n').map(l => l.trim()).filter(Boolean)
+
+  const renderInline = (line: string) => {
+    const parts: React.ReactNode[] = []
+    const regex = /\*\*(.*?)\*\*/g
+    let lastIndex = 0
+    let match
+
+    while ((match = regex.exec(line)) !== null) {
+      if (match.index > lastIndex) {
+        const plain = line.substring(lastIndex, match.index).replace(/[\*\_]/g, '')
+        if (plain) parts.push(plain)
+      }
+      const boldText = match[1].replace(/[\*\_]/g, '')
+      parts.push(
+        <strong key={`b-${match.index}`} className="font-semibold text-foreground">
+          {boldText}
+        </strong>
+      )
+      lastIndex = regex.lastIndex
+    }
+
+    if (lastIndex < line.length) {
+      const rest = line.substring(lastIndex).replace(/[\*\_]/g, '')
+      if (rest) parts.push(rest)
+    }
+
+    return parts.length > 0 ? parts : line.replace(/[\*\_]/g, '')
+  }
+
+  const blocks: { type: 'p' | 'list', items: string[] }[] = []
+  let currentList: string[] = []
+
+  rawLines.forEach((line) => {
+    const isBullet = /^[\*\-•]\s*/.test(line)
+    if (isBullet) {
+      currentList.push(line.replace(/^[\*\-•]\s*/, ''))
+    } else {
+      if (currentList.length > 0) {
+        blocks.push({ type: 'list', items: currentList })
+        currentList = []
+      }
+      blocks.push({ type: 'p', items: [line] })
+    }
+  })
+
+  if (currentList.length > 0) {
+    blocks.push({ type: 'list', items: currentList })
+  }
+
+  return (
+    <div className="space-y-2 text-sm leading-relaxed">
+      {blocks.map((block, idx) => {
+        if (block.type === 'list') {
+          return (
+            <ul key={idx} className="space-y-1.5 pl-1 my-1">
+              {block.items.map((item, iIdx) => (
+                <li key={iIdx} className="flex items-start gap-2">
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary/80" />
+                  <span className="flex-1">{renderInline(item)}</span>
+                </li>
+              ))}
+            </ul>
+          )
+        }
+        return (
+          <p key={idx} className="my-1">
+            {renderInline(block.items[0])}
+          </p>
+        )
+      })}
+    </div>
+  )
+}
+
 export function ChatbotWidget() {
   const [isOpen, setIsOpen] = useState(false)
   const [isMinimized, setIsMinimized] = useState(false)
@@ -79,11 +192,40 @@ export function ChatbotWidget() {
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(true)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
+  const [currentSpeakingId, setCurrentSpeakingId] = useState<string | null>(null)
   
   const scrollRef = useRef<HTMLDivElement>(null)
   const recognitionRef = useRef<any>(null)
+  const voicesRef = useRef<SpeechSynthesisVoice[]>([])
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
   const t = translations[selectedLanguage]
+
+  // Pre-load voices on component mount
+  useEffect(() => {
+    if (typeof window === "undefined" || !('speechSynthesis' in window)) return
+
+    const loadVoices = () => {
+      const available = window.speechSynthesis.getVoices()
+      if (available && available.length > 0) {
+        voicesRef.current = available
+      }
+    }
+
+    loadVoices()
+    window.speechSynthesis.onvoiceschanged = loadVoices
+
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current = null
+      }
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel()
+        window.speechSynthesis.onvoiceschanged = null
+      }
+    }
+  }, [])
 
   // Set initial message when language changes if messages is empty
   useEffect(() => {
@@ -135,44 +277,144 @@ export function ChatbotWidget() {
     }
   }, [selectedLanguage])
 
-  // Text to Speech
-  const speak = useCallback((text: string) => {
+  // Text to Speech: Native server /api/tts for Tamil and Hindi, browser TTS for English
+  const speak = useCallback((text: string, messageId?: string) => {
     if (!isVoiceEnabled || typeof window === "undefined") return
-    window.speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.lang = selectedLanguage
-    const voices = window.speechSynthesis.getVoices()
-    const preferredVoice = voices.find(v => v.lang.startsWith(selectedLanguage.split('-')[0]))
-    if (preferredVoice) utterance.voice = preferredVoice
 
-    utterance.onstart = () => { setIsSpeaking(true); setIsPaused(false); }
-    utterance.onend = () => { setIsSpeaking(false); setIsPaused(false); }
-    utterance.onpause = () => setIsPaused(true)
-    utterance.onresume = () => setIsPaused(false)
-    utterance.onerror = () => { setIsSpeaking(false); setIsPaused(false); }
+    // Stop any currently playing audio or speech
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+      audioRef.current = null
+    }
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+    }
 
-    window.speechSynthesis.speak(utterance)
+    const detectedLang = detectLanguage(text, selectedLanguage)
+    const cleaned = cleanTextForSpeech(text)
+    if (!cleaned) return
+
+    // Auto sync state language if text was in Tamil or Hindi
+    if (detectedLang !== selectedLanguage) {
+      setSelectedLanguage(detectedLang)
+    }
+
+    const langCode = detectedLang === "ta-IN" ? "ta" : detectedLang === "hi-IN" ? "hi" : "en"
+
+    // For Tamil & Hindi: Always use server /api/tts to guarantee 100% native pronunciation
+    // on all machines regardless of whether Windows has the Tamil voice pack installed!
+    if (langCode === "ta" || langCode === "hi") {
+      setCurrentSpeakingId(messageId || null)
+      setIsSpeaking(true)
+      setIsPaused(false)
+
+      const audioUrl = `/api/tts?text=${encodeURIComponent(cleaned)}&lang=${langCode}`
+      const audio = new Audio(audioUrl)
+      audioRef.current = audio
+
+      audio.onplay = () => {
+        setIsSpeaking(true)
+        setIsPaused(false)
+      }
+      audio.onpause = () => {
+        setIsPaused(true)
+      }
+      audio.onended = () => {
+        setIsSpeaking(false)
+        setIsPaused(false)
+        setCurrentSpeakingId(null)
+        audioRef.current = null
+      }
+      audio.onerror = (e) => {
+        console.warn("Audio element error:", e)
+        setIsSpeaking(false)
+        setIsPaused(false)
+        setCurrentSpeakingId(null)
+        audioRef.current = null
+      }
+
+      audio.play().catch(e => {
+        console.warn("Audio play prevented:", e)
+        setIsSpeaking(false)
+        setIsPaused(false)
+        setCurrentSpeakingId(null)
+      })
+      return
+    }
+
+    // For English: Use SpeechSynthesis API
+    if ('speechSynthesis' in window) {
+      const availableVoices = window.speechSynthesis.getVoices()
+      const matchedVoice = availableVoices.find(v => 
+        v.lang.toLowerCase().startsWith("en-in") || 
+        v.lang.toLowerCase().startsWith("en")
+      )
+
+      const utterance = new SpeechSynthesisUtterance(cleaned)
+      utterance.lang = "en-IN"
+      if (matchedVoice) {
+        utterance.voice = matchedVoice
+      }
+
+      utterance.onstart = () => {
+        setIsSpeaking(true)
+        setIsPaused(false)
+        setCurrentSpeakingId(messageId || null)
+      }
+      utterance.onend = () => {
+        setIsSpeaking(false)
+        setIsPaused(false)
+        setCurrentSpeakingId(null)
+      }
+      utterance.onerror = () => {
+        setIsSpeaking(false)
+        setIsPaused(false)
+        setCurrentSpeakingId(null)
+      }
+      utterance.onpause = () => setIsPaused(true)
+      utterance.onresume = () => setIsPaused(false)
+
+      window.speechSynthesis.speak(utterance)
+    }
   }, [isVoiceEnabled, selectedLanguage])
 
   const togglePlayback = () => {
-    if (isPaused) {
-      window.speechSynthesis.resume()
-    } else {
-      window.speechSynthesis.pause()
+    if (audioRef.current) {
+      if (isPaused) {
+        audioRef.current.play()
+        setIsPaused(false)
+      } else {
+        audioRef.current.pause()
+        setIsPaused(true)
+      }
+      return
+    }
+
+    if (typeof window !== "undefined" && 'speechSynthesis' in window) {
+      if (isPaused) {
+        window.speechSynthesis.resume()
+        setIsPaused(false)
+      } else {
+        window.speechSynthesis.pause()
+        setIsPaused(true)
+      }
     }
   }
 
   const stopPlayback = () => {
-    window.speechSynthesis.cancel()
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+      audioRef.current = null
+    }
+    if (typeof window !== "undefined" && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+    }
     setIsSpeaking(false)
     setIsPaused(false)
+    setCurrentSpeakingId(null)
   }
-
-  useEffect(() => {
-    return () => {
-      if (typeof window !== "undefined") window.speechSynthesis.cancel()
-    }
-  }, [])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -185,7 +427,7 @@ export function ChatbotWidget() {
       recognitionRef.current?.stop()
     } else {
       if (!recognitionRef.current) {
-        toast.error("Speech recognition not supported.")
+        toast.error("Speech recognition not supported in this browser.")
         return
       }
       setIsListening(true)
@@ -196,6 +438,12 @@ export function ChatbotWidget() {
   const handleSend = async (overrideInput?: string) => {
     const textToSend = overrideInput || input
     if (!textToSend.trim() || isTyping) return
+
+    // Detect if user input is in Tamil/Hindi to align language early
+    const inputLang = detectLanguage(textToSend, selectedLanguage)
+    if (inputLang !== selectedLanguage) {
+      setSelectedLanguage(inputLang)
+    }
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -212,33 +460,34 @@ export function ChatbotWidget() {
       const history = messages.map(msg => ({
         role: msg.sender === "user" ? "user" as const : "model" as const,
         parts: [{ text: msg.content }]
-      }));
+      }))
 
-      const response = await getChatResponse(textToSend, history);
+      const response = await getChatResponse(textToSend, history)
 
       if (response.content) {
+        const botId = (Date.now() + 1).toString()
         const botMessage: Message = {
-          id: (Date.now() + 1).toString(),
+          id: botId,
           content: response.content,
           sender: "bot",
           timestamp: new Date(),
         }
         setMessages((prev) => [...prev, botMessage])
-        speak(response.content)
+        speak(response.content, botId)
       } else if (response.error) {
-        toast.error(response.error);
+        toast.error(response.error)
       }
     } catch (error) {
-      console.error("Chat Error:", error);
-      toast.error("An unexpected error occurred.");
+      console.error("Chat Error:", error)
+      toast.error("An unexpected error occurred.")
     } finally {
       setIsTyping(false)
     }
   }
 
   const getLanguageLabel = (lang: Language) => {
-    if (lang === "ta-IN") return "Tamil"
-    if (lang === "hi-IN") return "Hindi"
+    if (lang === "ta-IN") return "Tamil (தமிழ்)"
+    if (lang === "hi-IN") return "Hindi (हिंदी)"
     return "English"
   }
 
@@ -258,7 +507,7 @@ export function ChatbotWidget() {
     <div
       className={cn(
         "fixed bottom-6 right-6 z-50 flex w-80 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl transition-all sm:w-96",
-        isMinimized ? "h-14" : "h-[500px]"
+        isMinimized ? "h-14" : "h-[540px]"
       )}
     >
       {/* Header */}
@@ -306,7 +555,7 @@ export function ChatbotWidget() {
                     onClick={stopPlayback}
                     title="Stop voice"
                   >
-                    <Square className="h-4 w-4 fill-current" />
+                    <Square className="h-3.5 w-3.5 fill-current" />
                   </Button>
                 </>
               )}
@@ -328,12 +577,17 @@ export function ChatbotWidget() {
           <button
             onClick={() => setIsMinimized(!isMinimized)}
             className="rounded p-1 hover:bg-primary-foreground/20"
+            title="Minimize"
           >
             <Minimize2 className="h-4 w-4" />
           </button>
           <button
-            onClick={() => setIsOpen(false)}
+            onClick={() => {
+              stopPlayback()
+              setIsOpen(false)
+            }}
             className="rounded p-1 hover:bg-primary-foreground/20"
+            title="Close"
           >
             <X className="h-4 w-4" />
           </button>
@@ -343,31 +597,71 @@ export function ChatbotWidget() {
       {!isMinimized && (
         <>
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 bg-muted/30" ref={scrollRef}>
+          <div className="flex-1 overflow-y-auto p-4 bg-muted/20" ref={scrollRef}>
             <div className="flex flex-col gap-4">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={cn(
-                    "flex",
-                    message.sender === "user" ? "justify-end" : "justify-start"
-                  )}
-                >
+              {messages.map((message) => {
+                const isBot = message.sender === "bot"
+                const isCurrentlySpeakingThis = isSpeaking && currentSpeakingId === message.id
+
+                return (
                   <div
+                    key={message.id}
                     className={cn(
-                      "max-w-[85%] rounded-2xl px-4 py-2 text-sm",
-                      message.sender === "user"
-                        ? "bg-primary text-primary-foreground shadow-sm rounded-tr-none"
-                        : "bg-card border border-border text-foreground shadow-sm rounded-tl-none"
+                      "flex flex-col",
+                      isBot ? "items-start" : "items-end"
                     )}
                   >
-                    {message.content}
-                    <div className="mt-1 text-[10px] opacity-70 text-right">
-                      {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    <div
+                      className={cn(
+                        "relative max-w-[88%] rounded-2xl px-4 py-2.5 text-sm shadow-sm",
+                        !isBot
+                          ? "bg-primary text-primary-foreground rounded-tr-none"
+                          : "bg-card border border-border text-foreground rounded-tl-none"
+                      )}
+                    >
+                      {isBot ? (
+                        <FormattedChatMessage content={message.content} />
+                      ) : (
+                        <div className="whitespace-pre-wrap">{message.content}</div>
+                      )}
+
+                      <div className="mt-1.5 flex items-center justify-between gap-3 text-[10px] opacity-70">
+                        {isBot ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isCurrentlySpeakingThis) {
+                                stopPlayback()
+                              } else {
+                                speak(message.content, message.id)
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 hover:text-primary transition-colors cursor-pointer"
+                            title="Play audio for this message"
+                          >
+                            {isCurrentlySpeakingThis ? (
+                              <>
+                                <Square className="h-2.5 w-2.5 fill-current text-primary" />
+                                <span className="text-primary font-medium">Speaking...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Volume2 className="h-2.5 w-2.5" />
+                                <span>Speak</span>
+                              </>
+                            )}
+                          </button>
+                        ) : (
+                          <span />
+                        )}
+                        <span>
+                          {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
               {isTyping && (
                 <div className="flex justify-start">
                   <div className="bg-card border border-border text-muted-foreground flex items-center gap-2 max-w-[85%] rounded-2xl rounded-tl-none px-4 py-2 text-sm italic shadow-sm">

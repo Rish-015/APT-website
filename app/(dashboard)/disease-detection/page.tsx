@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Upload, ImageIcon, RefreshCw, AlertCircle, CheckCircle2, Volume2, ShieldCheck, Stethoscope } from "lucide-react"
@@ -20,6 +20,7 @@ export default function DiseaseDetectionPage() {
   const [result, setResult] = useState<DiagnosisResult | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
@@ -54,17 +55,34 @@ export default function DiseaseDetectionPage() {
   }
 
   const speak = useCallback((text: string) => {
-    if (typeof window === "undefined" || !window.speechSynthesis) return
-    window.speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(text)
-    
-    // Attempt to find a matching voice
-    const lang = getCurrentLanguage()
-    if (lang === "Tamil") utterance.lang = "ta-IN"
-    else if (lang === "Hindi") utterance.lang = "hi-IN"
-    else utterance.lang = "en-IN"
+    if (typeof window === "undefined") return
 
-    window.speechSynthesis.speak(utterance)
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current = null
+    }
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel()
+    }
+
+    const lang = getCurrentLanguage()
+    const isTamil = lang === "Tamil" || /[\u0B80-\u0BFF]/.test(text)
+    const isHindi = lang === "Hindi" || /[\u0900-\u097F]/.test(text)
+
+    if (isTamil || isHindi) {
+      const langCode = isTamil ? "ta" : "hi"
+      const audioUrl = `/api/tts?text=${encodeURIComponent(text)}&lang=${langCode}`
+      const audio = new Audio(audioUrl)
+      audioRef.current = audio
+      audio.play().catch(console.warn)
+      return
+    }
+
+    if (window.speechSynthesis) {
+      const utterance = new SpeechSynthesisUtterance(text)
+      utterance.lang = "en-IN"
+      window.speechSynthesis.speak(utterance)
+    }
   }, [])
 
   const handleSubmit = async () => {
