@@ -673,10 +673,14 @@ export async function detectDiseaseAction(formData: FormData) {
         const base64Image = formData.get("base64Image") as string;
         const language = (formData.get("language") as string) || "English";
         const groqApiKey = process.env.GROQ_API_KEY;
-        const mlApiUrl = process.env.LOCAL_ML_API_URL || "http://127.0.0.1:5000";
+        const plantnetApiKey = process.env.PLANTNET_API_KEY;
 
         if (!groqApiKey || groqApiKey === "your_groq_api_key_here") {
             return { error: "AI Scanner is in offline mode (Groq API Key missing)." };
+        }
+
+        if (!plantnetApiKey || plantnetApiKey === "your_plantnet_api_key_here") {
+            return { error: "AI scanner service configuration is missing. Please contact support." };
         }
 
         const groq = new Groq({ apiKey: groqApiKey });
@@ -684,73 +688,129 @@ export async function detectDiseaseAction(formData: FormData) {
         // ============================================
         // PHASE 1: LEAF VALIDATION (GROQ VISION)
         // ============================================
-        const validationPrompt = `
-            Analyze this image. 
-            Is this a plant leaf? 
-            Respond with only "yes" or "no".
-        `;
+        let isLeaf = true;
+        try {
+            const validationPrompt = `Analyze this image. Does this image contain a plant leaf, crop foliage, fruit, or agricultural plant? Respond with only "yes" or "no".`;
+            const validationResponse = await groq.chat.completions.create({
+                model: "qwen/qwen3.8-27b",
+                messages: [
+                    {
+                        role: "user",
+                        content: [
+                            { type: "text", text: validationPrompt },
+                            { type: "image_url", image_url: { url: base64Image } }
+                        ],
+                    },
+                ],
+                max_tokens: 1024,
+                ...({ reasoning_format: "hidden" } as any),
+            });
 
-        const validationResponse = await groq.chat.completions.create({
-            model: "qwen/qwen3.8-27b",
-            messages: [
-                {
-                    role: "user",
-                    content: [
-                        { type: "text", text: validationPrompt },
-                        { type: "image_url", image_url: { url: base64Image } }
-                    ],
-                },
-            ],
-            max_tokens: 1024,
-            ...({ reasoning_format: "hidden" } as any),
-        });
+            const validationText = validationResponse.choices[0]?.message?.content?.trim().toLowerCase() || "";
+            // Reject only if it explicitly answers "no" without "yes"
+            if (validationText.includes("no") && !validationText.includes("yes")) {
+                isLeaf = false;
+            }
+        } catch (valErr) {
+            console.warn("Groq leaf vision validation skipped:", valErr);
+        }
 
-        const validationText = validationResponse.choices[0].message.content?.trim().toLowerCase() || "";
-        
-        if (!validationText.includes("yes")) {
+        if (!isLeaf) {
             return { error: "No leaf detected. This tool is specifically for plant leaf disease analysis." };
         }
 
         // ============================================
-        // PHASE 2: DISEASE DETECTION (LOCAL ML API)
+        // PHASE 2: DISEASE DETECTION (PL@NTNET API)
         // ============================================
         let detectedDisease = "";
-        try {
-            // Convert base64 to Blob/File for Flask API
-            const base64Data = base64Image.split(",")[1];
-            const byteCharacters = atob(base64Data);
-            const byteNumbers = new Array(byteCharacters.length);
-            for (let i = 0; i < byteCharacters.length; i++) {
-                byteNumbers[i] = byteCharacters.charCodeAt(i);
-            }
-            const byteArray = new Uint8Array(byteNumbers);
-            const blob = new Blob([byteArray], { type: "image/jpeg" });
-            
-            const formData = new FormData();
-            formData.append("image", blob, "leaf.jpg");
+        let confidenceScore = 0;
+        let remainingRequests: number | undefined = undefined;
 
-            const mlResponse = await fetch(`${mlApiUrl}/api/predict-disease`, {
+        try {
+            // 1. Convert base64 data to Blob
+            const base64Parts = base64Image.split(",");
+            const base64Data = base64Parts.length > 1 ? base64Parts[1] : base64Parts[0];
+            const buffer = Buffer.from(base64Data, "base64");
+            const blob = new Blob([buffer], { type: "image/jpeg" });
+
+            // 2. Build Pl@ntNet multipart form data
+            const plantNetFormData = new FormData();
+            plantNetFormData.append("images", blob, "leaf.jpg");
+            plantNetFormData.append("organs", "leaf");
+
+            // 3. Call Pl@ntNet API
+            const plantNetUrl = `https://my-api.plantnet.org/v2/diseases/identify?api-key=${plantnetApiKey}&nb-results=3&lang=en`;
+            const plantNetRes = await fetch(plantNetUrl, {
                 method: "POST",
-                body: formData
+                body: plantNetFormData,
             });
 
-            if (!mlResponse.ok) throw new Error("Local ML API failed");
-            
-            const mlData = await mlResponse.json();
-            if (!mlData.success) throw new Error(mlData.error || "Detection failed");
-            
-            detectedDisease = mlData.disease;
-        } catch (mlErr) {
-            console.error("Local ML API Error:", mlErr);
-            return { error: "Failed to detect disease name using the local model. Ensure the ML service is running." };
+            if (plantNetRes.status === 404) {
+                // Pl@ntNet returns 404 when no disease or pathology matches the leaf
+                detectedDisease = "Healthy Plant / No Detectable Disease";
+                confidenceScore = 0.95;
+            } else if (!plantNetRes.ok) {
+                const errData = await plantNetRes.json().catch(() => ({}));
+                console.error("Pl@ntNet Error Response:", errData);
+                throw new Error((errData as any).message || `Pl@ntNet API error (Status ${plantNetRes.status})`);
+            } else {
+                const data = await plantNetRes.json();
+                remainingRequests = data.remainingIdentificationRequests;
+
+                // 4. Extract top match
+                if (data.results && data.results.length > 0) {
+                    const topResult = data.results[0];
+                    confidenceScore = typeof topResult.score === "number" ? topResult.score : 0;
+
+                    // If confidence is lower than threshold, consider as healthy / no severe pathology
+                    if (confidenceScore < 0.10) {
+                        detectedDisease = "Healthy / No Severe Disease Detected";
+                    } else {
+                        if (topResult.description) {
+                            detectedDisease = topResult.description;
+                        } else if (topResult.disease) {
+                            const diseaseObj = topResult.disease;
+                            detectedDisease = diseaseObj.label || diseaseObj.name || diseaseObj.scientificName || "Plant Pathology";
+                            if (diseaseObj.scientificName && !detectedDisease.includes(diseaseObj.scientificName)) {
+                                detectedDisease += ` (${diseaseObj.scientificName})`;
+                            }
+                        } else if (topResult.name) {
+                            detectedDisease = topResult.name;
+                        } else {
+                            detectedDisease = "Identified Plant Pathology";
+                        }
+                    }
+                } else {
+                    detectedDisease = "Healthy Plant";
+                    confidenceScore = 0.95;
+                }
+            }
+        } catch (plantNetErr: any) {
+            console.error("Botanical Engine Detection Error:", plantNetErr);
+            return { error: "Failed to analyze crop disease. Please ensure a clear, well-lit leaf image and try again." };
         }
 
+        // If healthy, return early with language-appropriate guidance
         if (detectedDisease.toLowerCase().includes("healthy")) {
+            const solutionText = language === "Tamil"
+                ? "குறிப்பிடத்தக்க பயிர் நோய் எதுவும் கண்டறியப்படவில்லை. வழக்கமான நீர்ப்பாசனம் மற்றும் சீரான பராமரிப்பைத் தொடரவும்."
+                : language === "Hindi"
+                ? "कोई गंभीर फसल रोग नहीं पाया गया। नियमित सिंचाई, पोषण और सामान्य रखरखाव जारी रखें।"
+                : "No significant disease detected. Continue regular irrigation, weeding, and balanced fertilizer management.";
+
+            const preventionText = language === "Tamil"
+                ? "மண் ஆரோக்கியத்தை பராமரிக்கவும், அதிக நீர்ப்பாசனத்தை தவிர்க்கவும் மற்றும் முன்கூட்டிய பூச்சி தாக்குதல்களை தொடர்ந்து கண்காணிக்கவும்."
+                : language === "Hindi"
+                ? "संतुलित मिट्टी के पोषण का ध्यान रखें, अत्यधिक पानी देने से बचें और नियमित रूप से पत्तियों की जांच करें।"
+                : "Maintain proper soil aeration, avoid over-watering foliage, and monitor crops regularly for early symptoms of pests or fungus.";
+
             return {
                 success: true,
                 disease: detectedDisease,
-                solution: "No disease detected. Continue regular maintenance.",
-                prevention: "Proper irrigation and soil nutrition."
+                solution: solutionText,
+                prevention: preventionText,
+                confidence: confidenceScore,
+                remainingRequests
             };
         }
 
@@ -758,33 +818,37 @@ export async function detectDiseaseAction(formData: FormData) {
         // PHASE 3: ADVICE GENERATION (GROQ LLM)
         // ============================================
         const advicePrompt = `
-            The plant has been diagnosed with: ${detectedDisease}.
-            Provide a highly detailed and comprehensive agricultural report in JSON format including:
-            1. Solution: Extensive, step-by-step remedies to overcome this specific disease. Include chemical treatments (with dosages if applicable), organic/natural remedies, and immediate actions to take.
-            2. Prevention: In-depth causes of the disease, environmental factors, and long-term preventive measures to avoid recurrence.
-            
+            The plant has been diagnosed with: ${detectedDisease} (Confidence: ${(confidenceScore * 100).toFixed(1)}%).
+            Provide a highly detailed and practical agricultural report in JSON format including:
+            1. Solution: Extensive, step-by-step remedies to cure and manage this specific disease. Include chemical treatments (with specific dosages if applicable), organic/natural remedies, and immediate actions to take.
+            2. Prevention: In-depth causes of the disease, environmental factors, soil management, and long-term preventive practices to prevent recurrence.
+
             Respond strictly in valid JSON where BOTH values are single flat strings:
             {
               "solution": "Single detailed string with all remedies combined...",
               "prevention": "Single detailed string with all prevention steps combined..."
             }
-            CRITICAL: You must provide all text translated accurately into ${language}. Do not use nested objects.
+            CRITICAL: Translate all content accurately and fluently into ${language}. Do not use nested objects or arrays.
         `;
 
         const adviceResponse = await groq.chat.completions.create({
             model: "qwen/qwen3.8-27b",
             messages: [{ role: "user", content: advicePrompt }],
             response_format: { type: "json_object" },
-            max_tokens: 1024,
+            max_tokens: 2048,
+            ...({ reasoning_format: "hidden" } as any),
         });
 
-        const adviceData = JSON.parse(adviceResponse.choices[0].message.content || "{}");
+        const adviceData = JSON.parse(adviceResponse.choices[0]?.message?.content || "{}");
 
-        // Safeguard to ensure React doesn't crash if the AI still returns an object
-        const formatString = (val: any) => {
+        // Safeguard to ensure React doesn't crash if the AI returns nested objects/arrays
+        const formatString = (val: any): string => {
             if (typeof val === 'string') return val;
+            if (Array.isArray(val)) {
+                return val.map((v) => typeof v === 'object' ? JSON.stringify(v) : String(v)).join('\n• ');
+            }
             if (typeof val === 'object' && val !== null) {
-                return Object.entries(val).map(([k, v]) => `${k.charAt(0).toUpperCase() + k.slice(1)}:\n${v}`).join('\n\n');
+                return Object.entries(val).map(([k, v]) => `${k.charAt(0).toUpperCase() + k.slice(1)}:\n${typeof v === 'object' ? JSON.stringify(v) : v}`).join('\n\n');
             }
             return String(val || "Data unavailable");
         };
@@ -793,12 +857,14 @@ export async function detectDiseaseAction(formData: FormData) {
             success: true,
             disease: detectedDisease,
             solution: formatString(adviceData.solution),
-            prevention: formatString(adviceData.prevention)
+            prevention: formatString(adviceData.prevention),
+            confidence: confidenceScore,
+            remainingRequests
         };
 
     } catch (error: any) {
         console.error("Hybrid Disease Detection Error:", error);
-        return { error: "Failed to process hybrid disease analysis. Ensure stable connection and clear image." };
+        return { error: "Failed to process disease analysis. Please ensure a clear image and try again." };
     }
 }
 

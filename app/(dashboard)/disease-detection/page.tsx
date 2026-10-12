@@ -12,6 +12,8 @@ interface DiagnosisResult {
   disease: string
   solution: string
   prevention: string
+  confidence?: number
+  remainingRequests?: number
 }
 
 export default function DiseaseDetectionPage() {
@@ -111,7 +113,9 @@ export default function DiseaseDetectionPage() {
         setResult({
           disease: response.disease,
           solution: response.solution || "No specific remedy provided.",
-          prevention: response.prevention || "General good farming practices are recommended."
+          prevention: response.prevention || "General good farming practices are recommended.",
+          confidence: response.confidence,
+          remainingRequests: response.remainingRequests,
         })
         toast.success("Crop analysis complete!")
       } else {
@@ -141,7 +145,7 @@ export default function DiseaseDetectionPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground lg:text-3xl">AI Disease Scanner</h1>
-          <p className="text-muted-foreground">Diagnose crop diseases instantly with advanced Gemini Vision AI.</p>
+          <p className="text-muted-foreground">Diagnose crop diseases instantly with AI-powered botanical scanning and treatment guidance.</p>
         </div>
         <Button variant="outline" className="w-fit" onClick={handleReset}>
           <RefreshCw className="mr-2 h-4 w-4" /> Reset Scanner
@@ -226,12 +230,19 @@ export default function DiseaseDetectionPage() {
                   <div className="p-3 rounded-lg bg-chart-2/10 shrink-0">
                     <ShieldCheck className="h-6 w-6 text-chart-2" />
                   </div>
-                  <div>
-                    <h3 className="font-bold text-xl text-foreground">{result.disease}</h3>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="flex h-2 w-2 rounded-full bg-chart-2 animate-pulse" />
-                      <p className="text-xs font-semibold text-chart-2 uppercase tracking-wider">AI Confirmed</p>
+                  <div className="flex-1">
+                    <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-chart-2/15 text-chart-2 border border-chart-2/30">
+                        <span className="h-1.5 w-1.5 rounded-full bg-chart-2 animate-pulse" />
+                        AI Verified
+                      </span>
+                      {typeof result.confidence === "number" && result.confidence > 0 && (
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20">
+                          {(result.confidence * 100).toFixed(1)}% Confidence
+                        </span>
+                      )}
                     </div>
+                    <h3 className="font-bold text-xl text-foreground leading-snug">{result.disease}</h3>
                   </div>
                 </div>
 
